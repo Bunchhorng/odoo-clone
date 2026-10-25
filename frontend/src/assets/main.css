@@ -1,0 +1,93 @@
+:root { font-family: 'DM Sans', sans-serif; color: #253b35; background: #f8f9f5; font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+a:focus-visible, button:focus-visible { outline: 3px solid #218166; outline-offset: 5px; }
+.workspace-shell { max-width: 1220px; padding: 0 54px; margin: auto; }
+.site-header { min-height: 108px; display: flex; align-items: center; gap: 52px; border-bottom: 1px solid #e0e6dd; }
+.brand { display: flex; align-items: center; gap: 12px; font-family: 'Manrope', sans-serif; font-size: 20px; font-weight: 800; letter-spacing: .03em; }
+.brand-mark { display: grid; place-items: center; background: #214f42; color: #fff; width: 42px; height: 42px; border-radius: 12px; font-size: 35px; line-height: 1; padding-bottom: 6px; }
+.brand-subtitle { display: block; font-family: 'DM Sans', sans-serif; font-size: 10px; color: #697c71; letter-spacing: .08em; font-weight: 400; margin-top: 1px; }
+nav { display: flex; align-self: stretch; gap: 30px; font-size: 13px; color: #6b7a71; }
+nav a { display: flex; align-items: center; position: relative; }
+nav a.active { color: #214f42; font-weight: 700; }
+nav a.active::after { content: ''; height: 3px; position: absolute; background: #315e4c; bottom: 0; left: 0; right: 0; }
+.connection-badge { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: 11px; border-radius: 30px; padding: 9px 12px; background: #eeeede; color: #6e6a33; white-space: nowrap; }
+.connection-badge.connected { background: #e9f1e6; color: #3a6845; }
+.connection-badge.disconnected { background: #fae8e2; color: #963f30; }
+.status-dot { display: inline-block; width: 6px; height: 6px; background: currentColor; border-radius: 50%; }
+.welcome { padding: 68px 0 53px; position: relative; }
+.eyebrow { font-size: 10px; font-weight: 700; letter-spacing: .2em; color: #6c856a; margin: 0 0 24px; }
+h1, h2, h3 { font-family: 'Manrope', sans-serif; }
+h1 { font-weight: 500; letter-spacing: -.055em; font-size: clamp(36px, 4.5vw, 55px); line-height: 1.17; margin: 0 0 23px; color: #23483b; }
+.intro { color: #738075; font-size: 14px; line-height: 1.85; margin: 0; }
+.welcome-note { position: absolute; right: 0; bottom: 59px; display: flex; align-items: center; gap: 12px; font-size: 10px; color: #7b877b; }
+.note-line { width: 30px; height: 1px; background: #b9c4af; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.section-heading h2 { font-size: 16px; font-weight: 700; letter-spacing: -.02em; margin: 0; }
+.section-heading > span { font-size: 10px; color: #8b9488; letter-spacing: .04em; }
+.app-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.app-card { padding: 27px; background: #fff; border: 1px solid #e0e5db; border-radius: 13px; display: flex; flex-direction: column; transition: border-color .15s, transform .15s; }
+.app-card:hover { border-color: #9eb39b; transform: translateY(-3px); }
+.app-icon { display: grid; place-items: center; width: 45px; height: 45px; border-radius: 13px; font-family: 'Manrope', sans-serif; font-weight: 600; font-size: 21px; margin-bottom: 25px; }
+.app-icon.green { background: #edf2e8; color: #507547; }
+.app-icon.blue { background: #edf1f5; color: #536d88; }
+.app-icon.sand { background: #f5efe2; color: #97845a; font-size: 16px; }
+.app-card h3 { font-size: 16px; letter-spacing: -.03em; margin: 0 0 11px; }
+.app-card p { font-size: 12px; color: #7c857c; line-height: 1.9; margin: 0 0 27px; }
+.card-action { display: flex; align-items: center; justify-content: space-between; margin-top: auto; font-size: 11px; font-weight: 600; color: #3d6450; }
+.card-action > span { font-size: 17px; }
+.health-panel { display: flex; align-items: center; gap: 18px; border: 1px solid #dfe6da; background: #f0f4eb; border-radius: 12px; padding: 25px 28px; margin: 27px 0 60px; }
+.health-symbol { display: grid; place-items: center; border: 1px solid #c3c8ae; color: #6c703d; width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0; }
+.health-symbol.connected { border-color: #c7d5be; color: #5e8250; }
+.health-symbol.disconnected { border-color: #dfada0; color: #963f30; }
+.health-copy h2 { font-size: 13px; margin: 0 0 7px; }
+.health-copy p { font-size: 11px; color: #7a8674; line-height: 1.65; margin: 0; }
+.last-checked { display: block; font-size: 10px; color: #7a8674; margin-top: 6px; }
+.button-secondary { margin-left: auto; padding: 10px 14px; border: 1px solid #cedac5; background: transparent; border-radius: 7px; font-size: 10px; color: #496644; cursor: pointer; white-space: nowrap; }
+.button-secondary:hover { background: #e4ecde; }
+.button-secondary:disabled { opacity: .6; cursor: wait; }
+.button-secondary > span { margin-right: 5px; }
+.site-footer { border-top: 1px solid #e0e6dd; padding: 25px 0 34px; display: flex; justify-content: space-between; font-size: 10px; color: #8b9588; gap: 15px; }
+.site-footer > span > span[aria-hidden] { margin: 0 10px; color: #bcc3b6; }
+.local-label { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+.guide-page { padding: 64px 0; max-width: 760px; }
+.steps { list-style: none; padding: 0; margin: 40px 0 0; }
+.steps li { display: flex; gap: 22px; border-top: 1px solid #e0e6dd; padding: 28px 0; }
+.step-number { padding-top: 4px; font-size: 12px; color: #8b9a7e; }
+.steps h2 { font-size: 17px; margin: 0 0 12px; }
+.steps p { font-size: 14px; line-height: 1.7; color: #738075; margin: 0 0 12px; }
+.text-link { font-size: 13px; color: #315e4c; text-decoration: underline; text-underline-offset: 4px; }
+@media (max-width: 800px) {
+  .workspace-shell { padding: 0 24px; }
+  .site-header { gap: 26px; min-height: 90px; }
+  nav { gap: 18px; }
+  .brand-subtitle { display: none; }
+  .connection-badge { font-size: 10px; padding: 8px 10px; }
+  .welcome-note { position: static; margin-top: 25px; }
+  .app-card { padding: 22px; }
+  .health-panel { padding: 22px; }
+}
+@media (max-width: 600px) {
+  .site-header { flex-wrap: wrap; gap: 20px; padding-top: 20px; }
+  .brand { font-size: 18px; }
+  .brand-mark { width: 34px; height: 34px; font-size: 28px; }
+  nav { order: 3; width: 100%; height: 43px; }
+  .connection-badge { margin-left: auto; }
+  .welcome { padding: 43px 0 35px; }
+  h1 { font-size: 38px; }
+  .intro { font-size: 13px; }
+  .desktop-break { display: none; }
+  .app-grid { grid-template-columns: 1fr; gap: 13px; }
+  .app-card { padding: 24px; }
+  .app-icon { margin-bottom: 18px; }
+  .app-card p { margin-bottom: 20px; font-size: 13px; }
+  .health-panel { align-items: flex-start; flex-wrap: wrap; margin-bottom: 40px; }
+  .health-copy { flex: 1; }
+  .button-secondary { margin-left: 56px; }
+  .site-footer { flex-direction: column; }
+  .guide-page { padding-top: 42px; }
+}
+@media (prefers-reduced-motion: reduce) { .app-card { transition: none; } .app-card:hover { transform: none; } }
