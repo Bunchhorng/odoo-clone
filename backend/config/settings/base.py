@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from django.core.exceptions import ImproperlyConfigured
 
@@ -26,6 +27,7 @@ INSTALLED_APPS = [
     "apps.accounts.apps.AccountsConfig",
     "apps.companies.apps.CompaniesConfig",
     "apps.core.apps.CoreConfig",
+    "apps.business.apps.BusinessConfig",
 ]
 
 MIDDLEWARE = [
@@ -74,6 +76,10 @@ DATABASES = {
 }
 
 AUTH_USER_MODEL = "accounts.User"
+CSRF_FAILURE_VIEW = "apps.core.api.csrf_failure"
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -88,3 +94,29 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Server-owned origin prevents reset-link host-header poisoning.
+FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:5173").rstrip("/")
+_frontend = urlsplit(FRONTEND_ORIGIN)
+if (_frontend.scheme not in ("http", "https") or not _frontend.netloc or
+        _frontend.username or _frontend.password or _frontend.path or _frontend.query or _frontend.fragment):
+    raise ImproperlyConfigured("FRONTEND_ORIGIN must be a single http(s) origin without a path or credentials.")
+SESSION_COOKIE_AGE = int(os.environ.get("SESSION_COOKIE_AGE", "28800"))
+PASSWORD_RESET_TIMEOUT = 1800
+AUTH_RATE_WINDOW_SECONDS = int(os.environ.get("AUTH_RATE_WINDOW_SECONDS", "900"))
+AUTH_LOGIN_IDENTITY_LIMIT = int(os.environ.get("AUTH_LOGIN_IDENTITY_LIMIT", "10"))
+AUTH_LOGIN_IP_LIMIT = int(os.environ.get("AUTH_LOGIN_IP_LIMIT", "100"))
+AUTH_RESET_IDENTITY_LIMIT = int(os.environ.get("AUTH_RESET_IDENTITY_LIMIT", "3"))
+AUTH_RESET_IP_LIMIT = int(os.environ.get("AUTH_RESET_IP_LIMIT", "30"))
+AUTH_RESET_QUEUE_TTL = 900
+for _setting in ("SESSION_COOKIE_AGE", "AUTH_RATE_WINDOW_SECONDS", "AUTH_LOGIN_IDENTITY_LIMIT",
+                 "AUTH_LOGIN_IP_LIMIT", "AUTH_RESET_IDENTITY_LIMIT", "AUTH_RESET_IP_LIMIT"):
+    if globals()[_setting] < 1:
+        raise ImproperlyConfigured(f"{_setting} must be positive.")
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "KERP <noreply@kerp.local>")
+EMAIL_TIMEOUT = 5
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "localhost")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "1") == "1"

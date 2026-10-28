@@ -1,47 +1,20 @@
 <script setup>
-import { computed } from 'vue'
-import { RouterLink } from 'vue-router'
-import { apps } from '../data/apps'
+import { computed, ref } from 'vue'
+import { modules } from '../data/modules'
+import AppIcon from '../components/AppIcon.vue'
+import { useAuthStore } from '../stores/auth'
 import { useHealthStore } from '../stores/health'
-
+const auth = useAuthStore()
 const health = useHealthStore()
-const checkedAt = computed(() => health.lastChecked?.toLocaleTimeString([], {
-  hour: '2-digit', minute: '2-digit', second: '2-digit',
-}))
+const search = ref('')
+const filtered = computed(() => modules.filter(app => `${app.name} ${app.description}`.toLowerCase().includes(search.value.toLowerCase())))
 </script>
-
 <template>
-  <section class="welcome">
-    <p class="eyebrow">YOUR WORKSPACE, CONNECTED</p>
-    <h1>A good place<br />to build your business.</h1>
-    <p class="intro">Welcome to KERP. Manage your team and companies,<br class="desktop-break" /> check your connections, and make this workspace your own.</p>
-    <div class="welcome-note"><span class="note-line"></span>Start small. Build together.</div>
-  </section>
-
-  <section class="apps-section" aria-labelledby="apps-heading">
-    <div class="section-heading"><h2 id="apps-heading">Your workspace</h2><span>03 essentials</span></div>
-    <div class="app-grid">
-      <component :is="app.route ? RouterLink : 'a'" v-for="app in apps" :key="app.title"
-        :to="app.route" :href="app.href" class="app-card">
-        <span class="app-icon" :class="app.tone" aria-hidden="true">{{ app.icon }}</span>
-        <h3>{{ app.title }}</h3>
-        <p>{{ app.description }}</p>
-        <span class="card-action">{{ app.label }}<span aria-hidden="true">↗</span></span>
-      </component>
-    </div>
-  </section>
-
-  <section class="health-panel" aria-labelledby="health-heading">
-    <div class="health-symbol" :class="health.status" aria-hidden="true">{{ health.status === 'connected' ? '✓' : '·' }}</div>
-    <div class="health-copy" aria-live="polite">
-      <h2 id="health-heading">{{ health.status === 'connected' ? 'Everything is connected.' : health.status === 'checking' ? 'Checking your connection…' : 'Your connection needs attention.' }}</h2>
-      <p v-if="health.error">{{ health.error }}</p>
-      <p v-else-if="health.status === 'connected'">Your API and database are ready. You’re all set to get started.</p>
-      <p v-else>Checking the API and database.</p>
-      <span v-if="checkedAt" class="last-checked">Last checked {{ checkedAt }} · refreshes every 30 seconds</span>
-    </div>
-    <button type="button" class="button-secondary" :disabled="health.checking" @click="health.check()">
-      <span aria-hidden="true">↻</span> {{ health.checking ? 'Checking…' : 'Check again' }}
-    </button>
+  <section class="launcher-page">
+    <div class="launcher-heading"><div><h1>Your apps</h1><p>{{ auth.activeCompany?.name || 'A workspace for your whole business' }}</p></div><label class="search-field"><AppIcon name="search" /><input v-model="search" aria-label="Search applications" placeholder="Search applications…" /></label></div>
+    <p v-if="!auth.activeCompany" class="notice">Start by creating your company. <RouterLink to="/companies" class="text-link">Create a company →</RouterLink></p>
+    <div class="launcher-grid"><RouterLink v-for="app in filtered" :key="app.path" :to="app.path" class="launcher-tile"><span class="launcher-icon" :style="{ '--app-color': app.color }"><AppIcon :name="app.icon" /></span><span>{{ app.name }}</span><small>{{ app.description }}</small></RouterLink></div>
+    <p v-if="!filtered.length" class="notice">No applications match your search.</p>
+    <section class="health-panel"><div class="health-copy" aria-live="polite"><h2>{{ health.status === 'connected' ? 'Your workspace is ready' : health.status === 'checking' ? 'Checking connection…' : 'Connection needs attention' }}</h2><p>{{ health.error || 'Your business data stays connected across applications.' }}</p></div><button class="button-secondary" :disabled="health.checking" @click="health.check()">{{ health.checking ? 'Checking…' : 'Check connection' }}</button></section>
   </section>
 </template>

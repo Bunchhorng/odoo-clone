@@ -1,17 +1,34 @@
 # KERP
 
-A Docker-based Django, Vue, and MySQL starter for a shared ERP workspace.
+A Django, Vue, and MySQL ERP project with an Odoo-style app launcher and connected
+core workflows: contacts, CRM, sales, purchase, inventory, invoices/payments,
+projects/tasks, reporting, and company/team access.
+
+This is an independent implementation with a defined feature set, not full Odoo
+parity. See the [coverage matrix](docs/ODOO-COVERAGE.md) for working features and
+remaining applications, and the [ERP walkthrough](docs/ERP-GUIDE.md) to try it.
+
+Start with [SETUP.md](SETUP.md) to run the code, then follow the
+[user guide](docs/USER-GUIDE.md). Windows users can run
+`powershell -ExecutionPolicy Bypass -File scripts/start.ps1` from the project root
+to prepare local configuration and start Docker services. Existing `.env` secrets
+are preserved.
+
+The [Contacts and Products guide](docs/CONTACTS-PRODUCTS.md) covers categories,
+barcodes, filtering/sorting, bulk archive/restore and validated CSV transfers.
+Developers can follow [the Vue component guide](docs/VUE-COMPONENTS.md) to extend
+the shared controls, tables and dialogs.
 
 ## Run locally
 
 Install and start Docker Desktop. No host Python, Node, or MySQL installation is required.
 
-1. Copy `.env.example` to `.env` (PowerShell: `Copy-Item .env.example .env`).
-2. Replace the three `REPLACE_WITH_...` values with independent random secrets.
+1. If `.env` is absent, copy `.env.example` to `.env` (PowerShell: `Copy-Item .env.example .env`). Keep an existing `.env`.
+2. In a new configuration, replace the three `REPLACE_WITH_...` values with independent random secrets.
 3. Run `docker compose up -d --build`.
-4. Run `docker compose ps` and wait for all three services to be healthy.
+4. Run `docker compose ps`: db/backend/frontend should be healthy and mailer running.
 
-The default launcher is <http://localhost:5173>. The backend is <http://localhost:8000>,
+The default application is <http://localhost:5173>. The backend is <http://localhost:8000>,
 with administration at `/admin/` and the database-backed health endpoint at
 `/api/v1/health/`. The same health endpoint works through port 5173's API proxy.
 
@@ -44,11 +61,28 @@ then run `docker compose exec backend python manage.py createsuperuser --noinput
 Run this once; server startup never creates or resets users. After changing
 environment variables, recreate the backend with `docker compose up -d backend`.
 
-Sign in at `/admin/`, add a Company, then add Company Memberships for its users.
-Membership roles are stored for future features; this starter does not expose
-tenant-facing application APIs or implement membership-based permissions.
+Sign in at <http://localhost:5173/login>, create a company in **Companies**, and
+open **Team** to add existing user accounts. You become the company's owner.
+Company access is enforced by the API on every request. Staff and superusers also
+need a company membership to use its application APIs.
+
+Owners manage all roles. Administrators manage ordinary members. Members can view
+the team. The application prevents removal of the final active owner. Team accounts
+are managed in Django Admin; adding a teammate sends no email. Users can change
+their password from the account link and request recovery from the sign-in screen.
+See [the foundation guide](docs/FOUNDATION.md) for local recovery mail and limits.
 
 ## Development
+
+To explore a separate sample company with your existing account:
+
+```sh
+docker compose exec backend python manage.py seed_demo --email admin@kerp.local
+```
+
+Replace the email if needed, reload KERP, and select **KERP Demo**. This creates
+sample data in its own company and leaves existing companies/passwords unchanged.
+Repeating the command leaves the existing demo unchanged.
 
 Source directories are mounted into the development containers. Django reloads
 Python changes and Vite reloads Vue changes. When dependency files change, rebuild
@@ -78,10 +112,11 @@ with `docker compose down`. Both preserve the database volume.
 ## Structure
 
 ```text
-backend/         Django project; accounts, companies, and core apps
+backend/         Django session APIs, company access, admin, and automated tests
 frontend/        Vue 3, Pinia, Vue Router, and Vite
 infrastructure/  MySQL first-run test database permissions
 docs/            Team workflow, roadmap, and design notes
+scripts/         Windows startup and verification helpers
 compose.yml      Local development services and health checks
 .env.example     Shareable configuration; .env stays ignored
 ```
@@ -90,3 +125,18 @@ This is a development setup: local ports bind to `127.0.0.1`, Django uses its
 development server, and local settings default to `DEBUG=1`. Before production,
 add production settings, a WSGI/ASGI server and reverse proxy, HTTPS, secret
 management, and backup/storage operations as described in SETUP.md.
+
+## Documentation
+
+- [Setup and troubleshooting](SETUP.md): install, run, verify, and restart.
+- [User guide](docs/USER-GUIDE.md): complete the first company/team workflow.
+- [Developer guide](docs/DEVELOPMENT.md): architecture, files, and adding a module.
+- [API reference](docs/API.md): requests, responses, and permissions.
+- [Step-by-step roadmap](docs/ROADMAP.md): completed work and future modules.
+- [ERP walkthrough](docs/ERP-GUIDE.md): from contact creation to a paid invoice.
+- [Business API](docs/ERP-API.md): catalog, orders, stock, invoices, and projects.
+- [Odoo coverage](docs/ODOO-COVERAGE.md): implemented scope and remaining gaps.
+- [Verification record](docs/VERIFICATION.md): test results and browser workflows.
+- [Repository audit](docs/REPOSITORY-AUDIT.md): reproduced defects, risks, and remediation priorities.
+- [Odoo parity matrix](docs/ODOO-PARITY-MATRIX.md): 74 evidence-based capability rows; [CSV](docs/ODOO-PARITY-MATRIX.csv) for spreadsheets.
+- [Docker + ERP Core + Authentication](docs/FOUNDATION.md): resolved audit findings, account recovery, throttling, Docker/CI verification.
