@@ -19,6 +19,11 @@ barcodes, filtering/sorting, bulk archive/restore and validated CSV transfers.
 Developers can follow [the Vue component guide](docs/VUE-COMPONENTS.md) to extend
 the shared controls, tables and dialogs.
 
+The [CRM and Sales guide](docs/CRM-SALES.md) covers linked quotations, concurrent
+document edits, archived relationships and cancelled-invoice correction.
+The [Purchase and Inventory guide](docs/PURCHASE-INVENTORY.md) covers partial
+receipts, supplier returns awaiting replacement, stock tracing and count reversals.
+
 ## Run locally
 
 Install and start Docker Desktop. No host Python, Node, or MySQL installation is required.
@@ -48,6 +53,18 @@ docker compose exec backend python manage.py makemigrations --check --dry-run
 docker compose exec backend python manage.py test
 docker compose exec frontend npm run build
 ```
+
+For the full Windows browser run and parity-record verification:
+
+```sh
+node scripts/verify-browser.mjs
+python scripts/verify-parity.py
+python -m unittest discover -s scripts -p test_verify_parity.py
+```
+
+Browser checks require host Node.js 22+ and Edge; parity checks use Python 3.9+.
+See [E2E and parity verification](docs/E2E-PARITY.md) for results, evidence,
+report artifacts and the remaining Odoo capability gaps.
 
 ## Create an administrator
 
@@ -128,6 +145,7 @@ management, and backup/storage operations as described in SETUP.md.
 
 ## Documentation
 
+- [Project completion report](docs/PROJECT-STATUS-REPORT.md): delivered workflows, all 49 unfinished capability rows, production gaps, and completion priorities.
 - [Setup and troubleshooting](SETUP.md): install, run, verify, and restart.
 - [User guide](docs/USER-GUIDE.md): complete the first company/team workflow.
 - [Developer guide](docs/DEVELOPMENT.md): architecture, files, and adding a module.
@@ -140,3 +158,10 @@ management, and backup/storage operations as described in SETUP.md.
 - [Repository audit](docs/REPOSITORY-AUDIT.md): reproduced defects, risks, and remediation priorities.
 - [Odoo parity matrix](docs/ODOO-PARITY-MATRIX.md): 74 evidence-based capability rows; [CSV](docs/ODOO-PARITY-MATRIX.csv) for spreadsheets.
 - [Docker + ERP Core + Authentication](docs/FOUNDATION.md): resolved audit findings, account recovery, throttling, Docker/CI verification.
+
+The [Accounting & integration guide](docs/ACCOUNTING-INTEGRATION.md) covers the new
+ledger, posting-date locks, financial reports and source-document links. Open the
+Accounting app; import historical postings if the incomplete-reports notice appears.
+
+[Employees, Timesheets and Helpdesk](docs/SERVICE-APPLICATIONS.md) are available
+from Apps. Link existing Team accounts in Employees to enable personal time logging.

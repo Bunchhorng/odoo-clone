@@ -9,6 +9,9 @@ import CatalogView from '../views/CatalogView.vue'
 import DashboardView from '../views/DashboardView.vue'
 import OrdersView from '../views/OrdersView.vue'
 import InvoicesView from '../views/InvoicesView.vue'
+import AccountingView from '../views/AccountingView.vue'
+import TimesheetsView from '../views/TimesheetsView.vue'
+import HelpdeskView from '../views/HelpdeskView.vue'
 import StockView from '../views/StockView.vue'
 import SettingsView from '../views/SettingsView.vue'
 import AccountView from '../views/AccountView.vue'
@@ -35,6 +38,11 @@ const router = createRouter({
     { path: '/sales/:recordId?', component: OrdersView, props: { kind: 'sale' }, meta: { requiresAuth: true } },
     { path: '/purchase/:recordId?', component: OrdersView, props: { kind: 'purchase' }, meta: { requiresAuth: true } },
     { path: '/invoicing/:recordId?', component: InvoicesView, meta: { requiresAuth: true } },
+    { path: '/employees', component: CatalogView, props: { resource: 'employees' }, meta: { requiresAuth: true } },
+    { path: '/employees/departments', component: CatalogView, props: { resource: 'departments' }, meta: { requiresAuth: true } },
+    { path: '/timesheets', component: TimesheetsView, meta: { requiresAuth: true } },
+    { path: '/helpdesk/:recordId?', component: HelpdeskView, meta: { requiresAuth: true } },
+    { path: '/accounting', component: AccountingView, meta: { requiresAuth: true } },
     { path: '/settings', component: SettingsView, meta: { requiresAuth: true } },
     { path: '/setup', name: 'setup', component: SetupView },
     { path: '/:pathMatch(.*)*', redirect: '/' },

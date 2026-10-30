@@ -7,6 +7,21 @@ See [FOUNDATION.md](FOUNDATION.md) for the implementation and
 The diagnosis and baseline results below preserve
 the original audit snapshot; they do not describe the current open-defect count.
 
+The later [CRM/Sales follow-up](CRM-SALES.md) adds opportunity-linked quotations,
+stale document conflict checks, retry-safe completion activity, archived draft
+selections and recovery of unpaid cancelled invoices. Historical boundaries below
+remain a record of the original audit; see [VERIFICATION.md](VERIFICATION.md) for
+the latest checks.
+
+The [Accounting/integration phase](ACCOUNTING-INTEGRATION.md) subsequently adds
+a fixed double-entry ledger, reports, date locks, cancellation reversals and
+source tracing. Statements below about missing accounting preserve the original
+audit snapshot; current scope is in the guide and parity matrix.
+
+The [service application follow-up](SERVICE-APPLICATIONS.md), verified 2026-10-29,
+adds Employees, Timesheets and internal Helpdesk. Historical statements below
+about entirely missing HR/timesheet/helpdesk models preserve the original audit.
+
 Audit date: **2026-10-28, Asia/Bangkok**. Scope: the current repository working tree,
 its local Docker/MySQL runtime, documentation, baseline checks, and targeted probes.
 Application source was reviewed without making application fixes. Existing modified
@@ -268,7 +283,7 @@ These are explicit capability limits, distinct from the five defects above:
 The [parity matrix](ODOO-PARITY-MATRIX.md) uses Odoo 19 documentation as a fixed
 comparison baseline, with edition-dependent scope left explicit. At the original audit it contained
 **16 Implemented**, **16 Partial**, **36 Missing**, and **6 Defect** rows. The
-foundation follow-up now has **23 Implemented**, **18 Partial**, **33 Missing**,
+foundation milestone had **23 Implemented**, **18 Partial**, **33 Missing**,
 and **0 Defect** rows in the same selected checklist.
 Counts refer to this selected checklist and must not be presented as an Odoo parity
 percentage. See the official [Odoo 19 application docs](https://www.odoo.com/documentation/19.0/applications.html)

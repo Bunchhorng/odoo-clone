@@ -13,7 +13,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Uncommitted model changes need migrations.' }
     docker compose exec -T backend python manage.py test --noinput
     if ($LASTEXITCODE -ne 0) { throw 'Django tests failed.' }
-    docker compose exec -T frontend npm run build
-    if ($LASTEXITCODE -ne 0) { throw 'Vue build failed.' }
-    Write-Host 'Django checks, migration consistency, backend tests, and Vue build passed.'
+    docker compose exec -T frontend npm run check
+    if ($LASTEXITCODE -ne 0) { throw 'Frontend type checking, linting, tests, or build failed.' }
+    Write-Host 'Django checks, migration consistency, backend tests, and frontend checks passed.'
 } finally { Pop-Location }

@@ -3,11 +3,12 @@ import { defineStore } from 'pinia'
 import { api } from '../services/api'
 
 export const useAuthStore = defineStore('auth', () => {
-  const user = ref(null)
-  const companies = ref([])
-  const activeCompanyId = ref(null)
+  const user = ref(/** @type {import('../types/erp').User | null} */ (null))
+  const companies = ref(/** @type {import('../types/erp').Company[]} */ ([]))
+  const activeCompanyId = ref(/** @type {number | null} */ (null))
   const error = ref('')
   const busy = ref(false)
+  const loading = ref(false)
   const activeCompany = computed(() => companies.value.find(item => item.id === activeCompanyId.value))
   const canManage = computed(() => ['owner', 'admin'].includes(activeCompany.value?.role))
   let initialization
@@ -24,7 +25,12 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = ''
   }
   function clear() { apply({ user: null, companies: [], active_company_id: null }) }
-  async function refresh() { apply(await api('auth/session/')) }
+  async function refresh() {
+    loading.value = true
+    try { apply(await api('auth/session/')) }
+    catch (err) { error.value = err.message; throw err }
+    finally { loading.value = false }
+  }
   function initialize() {
     initialization ??= refresh().catch(err => { error.value = err.message })
     return initialization
@@ -51,6 +57,6 @@ export const useAuthStore = defineStore('auth', () => {
     try { apply(await api('companies/', { method: 'POST', data: { name } })) }
     finally { busy.value = false }
   }
-  return { user, companies, activeCompanyId, activeCompany, canManage, busy, error,
+  return { user, companies, activeCompanyId, activeCompany, canManage, busy, loading, error,
     initialize, refresh, clear, signIn, signOut, selectCompany, createCompany, registerLeaveGuard }
 })

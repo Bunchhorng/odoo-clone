@@ -6,9 +6,13 @@ import { createServer } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import assert from 'node:assert/strict'
+import { verifyServiceOperations, verifyServiceMember } from './browser-service-operations-flow.mjs'
 import { verifyERP } from './browser-erp-flow.mjs'
 import { verifyAuthentication } from './browser-foundation-flow.mjs'
 import { verifyCatalog, verifyCatalogReadOnly } from './browser-catalog-flow.mjs'
+import { verifyAccounting, verifyAccountingReadOnly } from './browser-accounting-flow.mjs'
+import { verifyCRMSales } from './browser-crm-sales-flow.mjs'
+import { verifyPurchaseInventory, verifyInventoryReadOnly } from './browser-purchase-inventory-flow.mjs'
 
 if (process.platform !== 'win32') throw new Error('This optional browser check currently supports Windows with Microsoft Edge.')
 const root = fileURLToPath(new URL('../', import.meta.url))
@@ -25,12 +29,16 @@ const secondName = `Second company ${runId}`
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 const results = []
 const catalogOnly = process.argv.includes('--catalog-only')
+const startedAt = new Date()
+const resultPath = path.join(local, catalogOnly ? 'catalog-browser-results.json' : 'auth-browser-results.json')
 const jsErrors = []
 const vueWarnings = []
 let edge, socket, browserSocket, version
+let failure
 let seeded = false
 let sequence = 0
 const pending = new Map()
+await writeFile(resultPath, JSON.stringify({ status: 'running', runId, scope: catalogOnly ? 'catalog' : 'full', startedAt: startedAt.toISOString(), results }, null, 2) + '\n')
 
 function django(code) {
   const result = spawnSync('docker', ['compose', 'exec', '-T', 'backend', 'python', 'manage.py', 'shell', '-c', code], {
@@ -38,6 +46,11 @@ function django(code) {
   })
   if (result.status !== 0) throw new Error(`Django browser-test setup/cleanup failed: ${result.stderr || result.error || 'check Docker services'}`)
   return result.stdout
+}
+function seedAccountingHistory(companyId, invoiceId) {
+  // Simulate a pre-ledger issued invoice, scoped to this run's owner and company.
+  assert.equal(Number.isSafeInteger(companyId) && Number.isSafeInteger(invoiceId), true)
+  django(`from apps.business.models import Invoice\nitem = Invoice.objects.get(pk=${invoiceId}, company_id=${companyId}, company__memberships__user__email=${JSON.stringify(owner)}, status='draft')\nassert not item.journal_entries.exists()\nitem.status = 'issued'\nitem.save(update_fields=['status'])`)
 }
 function resetLinkFor(email) {
   const output = django(`from django.contrib.auth import get_user_model; from django.contrib.auth.tokens import default_token_generator; from django.utils.encoding import force_bytes; from django.utils.http import urlsafe_base64_encode; import json\nuser = get_user_model().objects.get(email=${JSON.stringify(email)})\nprint('RESET=' + json.dumps({'uid': urlsafe_base64_encode(force_bytes(user.pk)), 'token': default_token_generator.make_token(user)}))`)
@@ -64,16 +77,21 @@ async function evaluate(expression) {
   return result.result.value
 }
 async function fill(selector, value) {
+  await until(() => evaluate(`(() => { const element = document.querySelector(${JSON.stringify(selector)}); if (!element || element.matches(':disabled')) return false; return element.tagName !== 'SELECT' || [...element.options].some(option => option.value === ${JSON.stringify(String(value))}) })()`), `available field: ${selector}`)
   await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); el.value = ${JSON.stringify(value)}; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); })()`)
 }
-async function click(selector) { await evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`) }
+async function click(selector) {
+  await until(() => evaluate(`(() => { const element = document.querySelector(${JSON.stringify(selector)}); return Boolean(element && !element.matches(':disabled') && element.getClientRects().length) })()`), `enabled control: ${selector}`)
+  await evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`)
+}
 async function screenshot(name) {
   const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true })
   await writeFile(path.join(local, name), Buffer.from(shot.data, 'base64'))
 }
 async function navigate(route) {
   await send('Page.navigate', { url: `${frontend}${route}` })
-  await until(() => evaluate('Boolean(document.querySelector(".site-header"))'), 'Vue page')
+  const target = new URL(route, frontend)
+  await until(() => evaluate(`document.readyState === 'complete' && (location.pathname === ${JSON.stringify(target.pathname)} || location.pathname === '/login') && Boolean(document.querySelector('#main-content > *'))`), 'Vue page')
 }
 async function signIn(email, secret = password) {
   await until(() => evaluate('Boolean(document.querySelector(".login-form"))'), 'sign-in form')
@@ -82,8 +100,8 @@ async function signIn(email, secret = password) {
   await click('.login-form button[type=submit]')
 }
 async function signOut() {
-  await until(() => evaluate('Boolean(document.querySelector(".account-actions button:not(:disabled)"))'), 'account actions ready')
-  await click('.account-actions button')
+  await until(() => evaluate('Boolean(document.querySelector(".user-avatar"))'), 'account actions ready')
+  await click('button[aria-label="User account menu"]'); await click('.sign-out')
   await until(() => evaluate('Boolean(document.querySelector(".login-form"))'), 'sign-out')
 }
 async function browserAPI(endpoint, method = 'GET', data) {
@@ -148,7 +166,7 @@ try {
   assert.equal(await evaluate('Boolean(document.querySelector(".empty-state a"))'), true)
   results.push('Invalid credentials show an error; valid credentials restore the requested route and empty-company state.')
 
-  await click('nav a[href="/companies"]')
+  await navigate('/companies')
   await fill('input[name=company-name]', companyName)
   await click('.content-columns form .button-primary')
   await until(() => evaluate(`document.querySelector('.company-picker select option:checked')?.textContent === ${JSON.stringify(companyName)}`), 'first company creation')
@@ -165,7 +183,7 @@ try {
   await until(() => evaluate(`document.querySelector('.company-picker select')?.value === ${JSON.stringify(String(first))}`), 'persisted company selection')
   results.push('Company creation assigns ownership; switching persists across reloads.')
 
-  await click('nav a[href="/team"]')
+  await navigate('/team')
   await until(() => evaluate('document.querySelectorAll(".member-row").length === 1'), 'owner team')
   await fill('input[name=teammate-email]', teammate)
   await click('.team-details form .button-primary')
@@ -185,7 +203,7 @@ try {
   await send('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: true })
   assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true)
   await screenshot('auth-team-mobile.png')
-  await click('nav a[href="/companies"]')
+  await navigate('/companies')
   assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true)
   await click('nav a[href="/"]')
   await until(() => evaluate('Boolean(document.querySelector(".health-panel"))'), 'overview')
@@ -197,6 +215,10 @@ try {
   await until(() => evaluate('document.querySelector(".connection-badge")?.classList.contains("connected")'), 'health recovery')
   results.push('Mobile layouts fit 375px; API health failure and retry recovery work.')
   if (!catalogOnly) await verifyERP({ send, evaluate, fill, click, screenshot, navigate, until, browserAPI, companyId: first, secondCompanyId: second, results })
+  if (!catalogOnly) await verifyCRMSales({ send, evaluate, fill, click, screenshot, navigate, until, browserAPI, companyId: first, results })
+  if (!catalogOnly) await verifyPurchaseInventory({ send, evaluate, fill, click, screenshot, navigate, until, browserAPI, companyId: first, results })
+  if (!catalogOnly) await verifyAccounting({ send, evaluate, fill, click, screenshot, navigate, until, browserAPI, companyId: first, secondCompanyId: second, seedAccountingHistory, results })
+  const serviceFixtures = !catalogOnly ? await verifyServiceOperations({ send, evaluate, fill, click, screenshot, navigate, until, browserAPI, companyId: first, secondCompanyId: second, owner, teammate, results }) : null
   await verifyCatalog({ send, evaluate, fill, click, screenshot, navigate, until, browserAPI, companyId: first, results })
   if (!catalogOnly) await verifyAuthentication({ evaluate, fill, click, until, navigate, browserAPI, signIn, signOut, resetLinkFor, owner, password, results })
   await signOut()
@@ -206,7 +228,17 @@ try {
   await until(() => evaluate('Boolean(document.querySelector(".account-bar"))'), 'member login')
   assert.equal((await browserAPI('companies/')).data.companies.length, 1)
   await verifyCatalogReadOnly({ evaluate, click, navigate, until, results })
-  await click('nav a[href="/team"]')
+  if (!catalogOnly) await verifyInventoryReadOnly({ evaluate, navigate, until, browserAPI, companyId: first, results })
+  if (!catalogOnly) await verifyAccountingReadOnly({ evaluate, navigate, until, browserAPI, companyId: first, results })
+  if (!catalogOnly) await verifyServiceMember({ evaluate, fill, click, navigate, until, browserAPI, companyId: first, fixtures: serviceFixtures, results })
+  if (!catalogOnly) {
+    await navigate('/settings')
+    await until(() => evaluate('Boolean(document.querySelector("select[name=currency]:disabled"))'), 'member company preferences')
+    assert.equal(await evaluate('Boolean(document.querySelector(".settings-content form button"))'), false)
+    assert.equal((await browserAPI(`companies/${first}/erp/settings/`, 'PATCH', { currency: 'EUR' })).status, 403)
+    results.push('Members can inspect company preferences while currency changes remain protected in the UI and API.')
+  }
+  await navigate('/team')
   await until(() => evaluate('document.querySelectorAll(".member-row").length === 2'), 'member view')
   assert.equal(await evaluate('document.querySelectorAll(".member-row select, .team-details form").length'), 0)
   assert.equal((await browserAPI(`companies/${first}/members/`, 'POST', { email: owner })).status, 403)
@@ -216,33 +248,55 @@ try {
   await click('nav a[href="/"]')
   await until(() => evaluate('Boolean(document.querySelector(".health-panel"))'), 'member overview')
   assert.equal((await browserAPI('auth/logout/', 'POST')).status, 200)
-  await click('nav a[href="/team"]')
+  // Keep the mounted session state to exercise a business API 401 and the
+  // session-expired event, rather than reinitializing through a full page load.
+  await click('button[aria-label="Open applications"]')
+  await click('.app-menu a[href="/team"]')
   await until(() => evaluate('location.pathname === "/login" && location.search.includes("expired=1")'), 'session-expiry redirect')
-  await click('nav a[href="/setup"]')
+  await navigate('/setup')
   await until(() => evaluate('document.querySelectorAll(".steps li").length === 5'), 'public guide')
   results.push('Expired sessions return to sign-in; the public guide remains available.')
   assert.deepEqual(jsErrors, [])
   assert.deepEqual(vueWarnings, [])
   results.push('No uncaught JavaScript errors.')
-  await writeFile(path.join(local, catalogOnly ? 'catalog-browser-results.json' : 'auth-browser-results.json'), JSON.stringify({ results }, null, 2) + '\n')
-  console.log(JSON.stringify({ results }, null, 2))
 } catch (error) {
+  failure = error
   if (socket?.readyState === WebSocket.OPEN) {
     await screenshot('browser-failure.png').catch(() => {})
-    const failure = await evaluate('({ path: location.pathname, text: document.body.innerText })').catch(() => ({}))
-    await writeFile(path.join(local, 'browser-failure.json'), JSON.stringify({ error: error.message, ...failure, jsErrors }, null, 2))
+    const pageState = await evaluate('({ path: location.pathname, text: document.body.innerText })').catch(() => ({}))
+    await writeFile(path.join(local, 'browser-failure.json'), JSON.stringify({ runId, error: error.message, ...pageState, jsErrors, vueWarnings, results }, null, 2))
   }
   throw error
 } finally {
-  if (version) {
-    browserSocket = new WebSocket(version.webSocketDebuggerUrl)
-    await new Promise(resolve => { browserSocket.onopen = resolve; browserSocket.onerror = resolve; setTimeout(resolve, 1000) })
-    if (browserSocket.readyState === WebSocket.OPEN) browserSocket.send(JSON.stringify({ id: 1, method: 'Browser.close' }))
-  }
+  const cleanupErrors = []
+  try {
+    if (version) {
+      browserSocket = new WebSocket(version.webSocketDebuggerUrl)
+      await new Promise(resolve => { browserSocket.onopen = resolve; browserSocket.onerror = resolve; setTimeout(resolve, 1000) })
+      if (browserSocket.readyState === WebSocket.OPEN) browserSocket.send(JSON.stringify({ id: 1, method: 'Browser.close' }))
+    }
+  } catch (error) { cleanupErrors.push(error.message) }
   socket?.close(); browserSocket?.close(); edge?.kill()
   for (const request of pending.values()) clearTimeout(request.timer)
-  if (seeded) {
-    // Delete only records tied to this unpredictable test run's exact identifiers.
-    django(`from django.contrib.auth import get_user_model; from apps.companies.models import Company; from apps.business.models import Payment, Invoice, StockMovement, Order, Task, Project, Opportunity, Product, Contact; from apps.accounts.models import PasswordResetDelivery; from django.db import transaction\nwith transaction.atomic():\n    companies = Company.objects.filter(name__in=[${JSON.stringify(companyName)}, ${JSON.stringify(secondName)}], memberships__user__email=${JSON.stringify(owner)})\n    ids = list(companies.values_list('id', flat=True))\n    for model in (Payment, Invoice, StockMovement, Order, Task, Project, Opportunity, Product, Contact):\n        model.objects.filter(company_id__in=ids).delete()\n    companies.delete()\n    PasswordResetDelivery.objects.filter(email__in=[${JSON.stringify(owner)}, ${JSON.stringify(teammate)}]).delete()\n    get_user_model().objects.filter(email__in=[${JSON.stringify(owner)}, ${JSON.stringify(teammate)}]).delete()`)
+  try {
+    if (seeded) {
+      // Delete only records tied to this unpredictable test run's exact identifiers.
+      django(`from django.contrib.auth import get_user_model; from apps.companies.models import Company; from apps.business.models import TimesheetEntry, HelpdeskTicket, Employee, Department, JournalEntry, Payment, Invoice, StockMovement, PurchaseReceipt, Order, Task, Project, Opportunity, Product, Contact; from apps.accounts.models import PasswordResetDelivery; from django.db import transaction; from django.db.models import Q\nwith transaction.atomic():\n    companies = Company.objects.filter(name__in=[${JSON.stringify(companyName)}, ${JSON.stringify(secondName)}], memberships__user__email=${JSON.stringify(owner)})\n    ids = list(companies.values_list('id', flat=True))\n    JournalEntry.objects.filter(company_id__in=ids, reversal_of__isnull=False).delete()\n    JournalEntry.objects.filter(company_id__in=ids).delete()\n    StockMovement.objects.filter(company_id__in=ids).filter(Q(return_of__isnull=False) | Q(reversal_of__isnull=False)).delete()\n    for model in (TimesheetEntry, HelpdeskTicket, Employee, Department, Payment, Invoice, StockMovement, PurchaseReceipt, Order, Task, Project, Opportunity, Product, Contact):\n        model.objects.filter(company_id__in=ids).delete()\n    companies.delete()\n    PasswordResetDelivery.objects.filter(email__in=[${JSON.stringify(owner)}, ${JSON.stringify(teammate)}]).delete()\n    get_user_model().objects.filter(email__in=[${JSON.stringify(owner)}, ${JSON.stringify(teammate)}]).delete()`)
+    }
+  } catch (error) { cleanupErrors.push(error.message) }
+  if (cleanupErrors.length) {
+    process.exitCode = 1
+    console.error('Browser-test cleanup failed:', cleanupErrors.join('; '))
   }
+  const report = {
+    status: failure || cleanupErrors.length ? 'failed' : 'passed',
+    runId, scope: catalogOnly ? 'catalog' : 'full', frontend,
+    startedAt: startedAt.toISOString(), completedAt: new Date().toISOString(),
+    durationMs: Date.now() - startedAt.getTime(), browser: version?.Browser,
+    groupCount: results.length, results, jsErrors, vueWarnings,
+    cleanup: { status: cleanupErrors.length ? 'failed' : 'passed', errors: cleanupErrors },
+    ...(failure ? { error: failure.message } : {}),
+  }
+  await writeFile(resultPath, JSON.stringify(report, null, 2) + '\n')
+  console.log(JSON.stringify(report, null, 2))
 }

@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 
 from apps.companies.models import Company, CompanyMembership
-from .models import Activity, Contact, Payment, Product, Project, Task
+from .models import Activity, Contact, Invoice, Order, Payment, Product, Project, Task
 
 
 class FoundationRegressionTests(TestCase):
@@ -23,6 +23,10 @@ class FoundationRegressionTests(TestCase):
         self.base = f"/api/v1/companies/{self.company.pk}/erp/"
 
     def post(self, path, data, status=200):
+        parts = path.strip("/").split("/")
+        if parts[-1] == "actions" and parts[0] in ("orders", "invoices"):
+            model = Order if parts[0] == "orders" else Invoice
+            data = {"expected_version": model.objects.get(pk=parts[1]).version, **data}
         response = self.client.post(self.base + path, data, content_type="application/json")
         self.assertEqual(response.status_code, status, response.content)
         return response.json()

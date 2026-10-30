@@ -24,34 +24,52 @@ workflows from advanced features and applications still to build.
    snapshots, issue/cancel, due dates, partial/full payments, retry protection, print.
 9. **Business dashboard and demo:** live totals, pipeline, low stock, tasks, recent
    orders/activity, isolated repeatable sample company, workflow and API guides.
+10. **CRM and Sales connection:** prefilled linked quotations and navigation,
+    document-version conflict protection, retained archived draft selections,
+    retry-safe completion activity, and unpaid cancelled-invoice correction.
+11. **Purchase and Inventory:** partial goods receipts with numbered history,
+    received/remaining quantities, supplier returns awaiting replacement, filtered
+    stock tracing, adjustment retry IDs and reversals preserving original entries.
+12. **Cross-module accounting:** order/invoice/stock/journal source links, balanced
+    invoice/payment postings, unpaid cancellation reversals, owner date locks,
+    explicit historical import and date-filtered financial reports/CSV.
+
+13. **Employees, Timesheets and Helpdesk:** department/work directories linked to
+    Team, own/team time with submission/review/voiding and CSV, internal support
+    tickets with notes/resolution history, task conversion and support-time links.
 
 Delivered means the core behavior above is implemented; it does not mean complete
-Odoo app parity. For example, invoices/payments do not include a general ledger.
+Odoo app parity. The ledger has a fixed chart and document-derived postings;
+manual journals, opening balances, valuation and localization remain separate.
 
 ## Next development passes
 
 ### 1. Deepen the current commercial workflow
 
-- Convert CRM opportunities to quotations with traceable relationships.
 - Add sales/purchase-specific access roles and approval thresholds.
-- Add partial receipts/deliveries, backorders, returns, and stock reversal rules.
+- Add partial sales deliveries/backorders, permanent-return credits, multi-location
+  transfers/reservations, and receipt/bill matching policies.
 - Add partial invoices, standalone invoices, credit notes, payment reversals.
 - Add product variants, images, barcode scanning, unit conversions, discounts, and pricelists.
 - Add record history, attachments, XLSX/document import/export, and date-filtered reports.
 
-### 2. Add accounting foundations
+### 2. Deepen accounting and choose localization
 
-Define accounts, balanced journal entries, periods, posting/reversal rules, bank
-reconciliation, and reporting. Specify the business's country and accounting/tax
-requirements before legal invoice formats or localized tax reports are implemented.
+The [accounting foundation](ACCOUNTING-INTEGRATION.md) supplies a fixed chart,
+balanced document journals, posting locks, reversals and basic reports. Next add
+opening balances, manual entries, custom accounts, bank reconciliation, credit
+notes, analytic dimensions and inventory valuation. Specify the business's country
+and accounting/tax requirements before legal invoice formats or localized tax reports are implemented.
 Use accounting acceptance examples and reconciliation tests, not visual similarity,
 to establish correctness.
 
 ### 3. Add service and organization apps
 
-Employees/departments, leave/attendance, timesheets/planning, expenses, helpdesk,
-documents, appointments, and calendar. Define payroll/localization requirements
-separately. Extend project work with dependencies, milestones, and billing.
+The [service apps](SERVICE-APPLICATIONS.md) now supply employee/department
+directories, reviewed project time and internal Helpdesk. Next add leave/attendance,
+recruitment, planning, expenses, knowledge, documents, appointments and calendar.
+Define payroll/localization separately. Extend project work with dependencies,
+milestones, time billing and profitability.
 
 ### 4. Add operations and customer-facing apps
 

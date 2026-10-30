@@ -28,6 +28,12 @@ class BusinessWorkflowTests(TestCase):
         self.base = f"/api/v1/companies/{self.company.pk}/erp/"
 
     def request(self, method, endpoint, data=None, status=200):
+        parts = endpoint.strip("/").split("/")
+        if data is not None and parts[0] in ("orders", "invoices") and len(parts) >= 2 and parts[1].isdigit() and (method == "patch" or parts[-1] == "actions"):
+            model = Order if parts[0] == "orders" else Invoice
+            current = model.objects.filter(pk=parts[1]).first()
+            if current:
+                data = {"expected_version": current.version, **data}
         response = getattr(self.client, method)(self.base + endpoint, data=data, content_type="application/json")
         self.assertEqual(response.status_code, status, response.content.decode())
         return response.json()

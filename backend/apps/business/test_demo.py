@@ -5,7 +5,7 @@ from django.core.management import call_command, CommandError
 from django.test import TestCase
 
 from apps.companies.models import Company
-from .models import Invoice, Payment, StockMovement
+from .models import Invoice, JournalEntry, Payment, StockMovement
 
 
 class DemoWorkspaceTests(TestCase):
@@ -14,9 +14,10 @@ class DemoWorkspaceTests(TestCase):
         original_hash = user.password
         original = Company.objects.create(name="Real business", slug="real-business")
         call_command("seed_demo", email=user.email, stdout=StringIO())
-        snapshots = (Invoice.objects.count(), Payment.objects.count(), StockMovement.objects.count())
+        snapshots = (Invoice.objects.count(), Payment.objects.count(), StockMovement.objects.count(), JournalEntry.objects.count())
+        self.assertEqual(JournalEntry.objects.count(), 5)
         call_command("seed_demo", email=user.email, stdout=StringIO())
-        self.assertEqual((Invoice.objects.count(), Payment.objects.count(), StockMovement.objects.count()), snapshots)
+        self.assertEqual((Invoice.objects.count(), Payment.objects.count(), StockMovement.objects.count(), JournalEntry.objects.count()), snapshots)
         self.assertTrue(Company.objects.filter(pk=original.pk, name="Real business").exists())
         self.assertFalse(Invoice.objects.filter(company=original).exists())
         user.refresh_from_db()

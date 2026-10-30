@@ -10,7 +10,7 @@ from apps.companies.access import membership_for
 from apps.companies.models import Company
 from apps.core.api import APIError
 from .models import (
-    Activity, Contact, DocumentSequence, Invoice, Order, OrderLine,
+    Activity, Contact, DocumentSequence, Invoice, Opportunity, Order, OrderLine,
     Payment, Product, StockMovement, WorkspaceSettings,
 )
 
@@ -50,6 +50,14 @@ def positive_id(value):
     if not 0 < number <= 9223372036854775807:
         raise APIError("Choose a valid record.")
     return number
+
+
+def check_version(item, data):
+    expected = data.get("expected_version")
+    if isinstance(expected, bool) or not isinstance(expected, int) or expected < 1:
+        raise APIError("Send the document's expected_version from its latest response.")
+    if expected != item.version:
+        raise APIError("This document changed in another session. Reload it and review the latest values before continuing.", 409)
 
 
 def decimal_value(value, label, *, places=2, minimum=ZERO, maximum=Decimal("9999999999.99")):
@@ -101,15 +109,22 @@ def paid_for(invoice):
     return invoice.payments.aggregate(value=Sum("amount"))["value"] or ZERO
 
 
-def build_lines(company_id, raw_lines, kind):
+def build_lines(company_id, raw_lines, kind, order=None):
     if not isinstance(raw_lines, list) or not 1 <= len(raw_lines) <= 100:
         raise APIError("An order needs 1 to 100 product lines.")
     lines = []
+    existing = {line.pk: line for line in order.lines.all()} if order else {}
+    used = set()
     for raw in raw_lines:
-        if not isinstance(raw, dict) or set(raw) - {"product_id", "description", "quantity", "unit_price", "tax_rate"}:
+        if not isinstance(raw, dict) or set(raw) - {"id", "product_id", "description", "quantity", "unit_price", "tax_rate"}:
             raise APIError("An order line contains unsupported fields.")
+        line_id = positive_id(raw["id"]) if "id" in raw else None
+        if line_id is not None and (line_id not in existing or line_id in used):
+            raise APIError("Choose each existing line from this order only once.")
+        used.add(line_id)
         product = scoped(Product, company_id, raw.get("product_id"))
-        if not product.is_active:
+        retained = line_id is not None and existing[line_id].product_id == product.pk
+        if not product.is_active and not retained:
             raise APIError("An archived product cannot be added to an order.")
         quantity = decimal_value(raw.get("quantity"), "Quantity", places=3, minimum=Decimal("0.001"), maximum=Decimal("999999999.999"))
         price = decimal_value(raw.get("unit_price", product.sale_price if kind == "sale" else product.cost_price), "Unit price")
@@ -122,7 +137,7 @@ def build_lines(company_id, raw_lines, kind):
         total = subtotal + tax
         if total > Decimal("99999999999999.99"):
             raise APIError("The line total is too large.")
-        lines.append(OrderLine(product=product, product_kind=product.kind, description=description.strip(),
+        lines.append(OrderLine(id=line_id, product=product, product_kind=product.kind, description=description.strip(),
                                quantity=quantity, unit_price=price, tax_rate=tax_rate,
                                subtotal=subtotal, tax_total=tax, total=total))
     if sum(line.total for line in lines) > Decimal("99999999999999.99"):
@@ -141,23 +156,36 @@ def save_order(company_id, data, order=None):
         raise APIError("Only draft quotations or RFQs can be edited.", 409)
     elif "kind" in data and data["kind"] != order.kind:
         raise APIError("An order's kind cannot be changed.")
+    if "opportunity_id" in data:
+        opportunity_id = positive_id(data["opportunity_id"]) if data["opportunity_id"] is not None else None
+        if not creating and opportunity_id != order.opportunity_id:
+            raise APIError("An order's opportunity cannot be changed.")
+        if opportunity_id is not None:
+            opportunity = scoped(Opportunity, company_id, opportunity_id)
+            if order.kind != "sale":
+                raise APIError("Only sales quotations can be linked to an opportunity.")
+            if creating and not opportunity.is_active:
+                raise APIError("Restore the opportunity before creating a quotation.")
+            order.opportunity = opportunity
     if "contact_id" in data or creating:
         contact = scoped(Contact, company_id, data.get("contact_id"))
-        if not contact.is_active:
+        changed_contact = creating or contact.pk != order.contact_id
+        if changed_contact and not contact.is_active:
             raise APIError("Choose an active contact.")
-        if order.kind == "sale" and not contact.is_customer:
+        if changed_contact and order.kind == "sale" and not contact.is_customer:
             raise APIError("The contact must be a customer.")
-        if order.kind == "purchase" and not contact.is_supplier:
+        if changed_contact and order.kind == "purchase" and not contact.is_supplier:
             raise APIError("The contact must be a supplier.")
         order.contact = contact
-        order.contact_name, order.contact_email, order.contact_address = contact.name, contact.email, contact.address
+        if changed_contact:
+            order.contact_name, order.contact_email, order.contact_address = contact.name, contact.email, contact.address
     if "date" in data:
         order.date = date_value(data["date"], "Order date")
     if "notes" in data:
         if not isinstance(data["notes"], str) or len(data["notes"]) > 10000:
             raise APIError("Notes must be text with at most 10000 characters.")
         order.notes = data["notes"]
-    lines = build_lines(company_id, data["lines"], order.kind) if "lines" in data else None
+    lines = build_lines(company_id, data["lines"], order.kind, None if creating else order) if "lines" in data else None
     if creating and lines is None:
         raise APIError("Add at least one product line.")
     if lines is not None:
@@ -166,13 +194,18 @@ def save_order(company_id, data, order=None):
         order.total = sum(line.total for line in lines)
     if creating:
         order.number = next_number(company_id, "SO" if order.kind == "sale" else "PO")
+    else:
+        order.version += 1
     order.full_clean()
     order.save()
     if lines is not None:
-        order.lines.all().delete()
+        retained_ids = [line.pk for line in lines if line.pk is not None]
+        order.lines.exclude(pk__in=retained_ids).delete()
         for line in lines:
             line.order = order
-        OrderLine.objects.bulk_create(lines)
+        OrderLine.objects.bulk_update([line for line in lines if line.pk is not None],
+            ["product", "product_kind", "description", "quantity", "unit_price", "tax_rate", "subtotal", "tax_total", "total"])
+        OrderLine.objects.bulk_create([line for line in lines if line.pk is None])
     return order
 
 
@@ -180,7 +213,11 @@ def fulfill_order(order, user):
     if order.status != "confirmed":
         raise APIError("Confirm the order before delivering or receiving it.", 409)
     if order.fulfilled_at:
-        return
+        return False
+    if order.kind == "purchase":
+        from .inventory import receive_purchase
+        _, created = receive_purchase(order, user, {}, require_version=False)
+        return created
     lines = list(order.lines.filter(product_kind="goods").select_related("product"))
     required = {}
     for line in lines:
@@ -191,12 +228,14 @@ def fulfill_order(order, user):
             if stock_for(product) < quantity:
                 raise APIError(f"Insufficient stock for {product.name}. Receive or adjust stock first.", 409)
     for line in lines:
-        StockMovement.objects.create(company_id=order.company_id, product=line.product, order=order,
+        StockMovement.objects.create(company_id=order.company_id, product=line.product, order=order, order_line=line,
                                      quantity=-line.quantity if order.kind == "sale" else line.quantity,
                                      reason=f"{'Delivery' if order.kind == 'sale' else 'Receipt'} {order.number}",
                                      actor_email=user.email)
     order.fulfilled_at = timezone.now()
-    order.save(update_fields=["fulfilled_at", "updated_at"])
+    order.version += 1
+    order.save(update_fields=["fulfilled_at", "version", "updated_at"])
+    return True
 
 
 def invoice_order(order):
@@ -216,7 +255,7 @@ def invoice_order(order):
     return invoice
 
 
-def register_payment(invoice, data):
+def register_payment(invoice, data, *, actor_email=""):
     try:
         request_id = UUID(str(data.get("request_id", uuid4())))
     except (ValueError, AttributeError):
@@ -245,5 +284,8 @@ def register_payment(invoice, data):
     payment.save()
     if invoice.total - paid_for(invoice) == ZERO:
         invoice.status = "paid"
-        invoice.save(update_fields=["status", "updated_at"])
+    invoice.version += 1
+    invoice.save(update_fields=["status", "version", "updated_at"])
+    from .accounting import post_payment
+    post_payment(payment, actor_email)
     return payment, True

@@ -10,6 +10,7 @@ from django.utils import timezone
 from apps.companies.models import Company, CompanyMembership
 from apps.business.models import Activity, Contact, Opportunity, Product, Project, StockMovement, Task, WorkspaceSettings
 from apps.business.services import fulfill_order, invoice_order, register_payment, save_order
+from apps.business.accounting import post_invoice
 
 
 class Command(BaseCommand):
@@ -82,17 +83,20 @@ class Command(BaseCommand):
         bill = invoice_order(purchase)
         bill.status = "issued"
         bill.save(update_fields=["status"])
+        post_invoice(bill, user.email)
         sale = order("sale", contacts[0], products[0], 4, True)
         fulfill_order(sale, user)
         invoice = invoice_order(sale)
         invoice.status = "issued"
         invoice.save(update_fields=["status"])
-        register_payment(invoice, {"amount": "500", "request_id": str(uuid4()), "reference": "Demo deposit"})
+        post_invoice(invoice, user.email)
+        register_payment(invoice, {"amount": "500", "request_id": str(uuid4()), "reference": "Demo deposit"}, actor_email=user.email)
         paid_sale = order("sale", contacts[5], products[6], 2, True)
         paid_invoice = invoice_order(paid_sale)
         paid_invoice.status = "issued"
         paid_invoice.save(update_fields=["status"])
-        register_payment(paid_invoice, {"amount": str(paid_invoice.total), "request_id": str(uuid4()), "reference": "Demo payment"})
+        post_invoice(paid_invoice, user.email)
+        register_payment(paid_invoice, {"amount": str(paid_invoice.total), "request_id": str(uuid4()), "reference": "Demo payment"}, actor_email=user.email)
         order("sale", contacts[1], products[1], 12)
         order("sale", contacts[2], products[2], 6)
         order("purchase", contacts[4], products[3], 30)

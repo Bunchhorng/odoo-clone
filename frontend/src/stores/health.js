@@ -5,7 +5,7 @@ import { getHealth } from '../services/api'
 export const useHealthStore = defineStore('health', () => {
   const status = ref('checking')
   const checking = ref(false)
-  const lastChecked = ref(null)
+  const lastChecked = ref(/** @type {Date | null} */ (null))
   const error = ref('')
 
   async function check() {

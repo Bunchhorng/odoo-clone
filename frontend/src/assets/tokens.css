@@ -1,0 +1,40 @@
+/* KERP semantic tokens. Text pairs are checked in tokens.test.ts. */
+:root {
+  color-scheme: light;
+  --font-sans: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+  --font-xs: .75rem; --font-sm: .8125rem; --font-base: .875rem; --font-lg: 1rem;
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px;
+  --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px; --radius-pill: 999px;
+  --primary: #714b83; --primary-hover: #5e3b70; --on-primary: #ffffff;
+  --background: #f6f5f8; --surface: #ffffff; --surface-subtle: #f0eef4; --surface-hover: #f5f1f8;
+  --text: #292532; --text-muted: #625b6e; --text-soft: #6c6376;
+  --border: #ded9e5; --input-border: #8a7f96; --focus: #8050a3;
+  --selected: #eee4f5; --link: #69417d;
+  --success: #216342; --success-bg: #e9f5ed;
+  --warning: #795208; --warning-bg: #fff4d9;
+  --danger: #a12c3a; --danger-bg: #fff0f1;
+  --info: #235d89; --info-bg: #eaf3fc;
+  --shadow-sm: 0 1px 3px #21162d0a;
+  --shadow-menu: 0 12px 40px #21162d24;
+  --shadow-modal: 0 24px 80px #160c2940;
+  --backdrop: #17102080;
+  --header: #603d70; --header-hover: #775188; --on-header: #ffffff;
+  --purple: var(--primary); --teal: var(--link); --ui-focus: var(--focus); --ui-selected: var(--selected); --ui-radius: var(--radius-md); --ui-space: var(--space-2);
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --primary: #cda6e4; --primary-hover: #ddc0ee; --on-primary: #261232;
+  --background: #18151e; --surface: #231f2b; --surface-subtle: #2e2838; --surface-hover: #342b40;
+  --text: #f2edf7; --text-muted: #c2b8ce; --text-soft: #b5a9c3;
+  --border: #494052; --input-border: #908199; --focus: #d6b0f1;
+  --selected: #43314f; --link: #dab3f0;
+  --success: #9cdbb3; --success-bg: #1c382b;
+  --warning: #f1d18a; --warning-bg: #3d311a;
+  --danger: #ffb4bf; --danger-bg: #482731;
+  --info: #acd6f7; --info-bg: #23384a;
+  --shadow-sm: 0 1px 3px #00000020;
+  --shadow-menu: 0 12px 40px #00000055;
+  --shadow-modal: 0 24px 80px #00000070;
+  --backdrop: #07050cb3;
+  --header: #32203f; --header-hover: #4e325e; --on-header: #ffffff;
+}

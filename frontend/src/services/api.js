@@ -1,5 +1,9 @@
 export const backendOrigin = import.meta.env.VITE_BACKEND_ORIGIN || 'http://localhost:8000'
 
+/**
+ * @param {string} path
+ * @param {{ method?: string, data?: unknown, format?: string }} [options]
+ */
 export async function api(path, { method = 'GET', data, format = 'json' } = {}) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 15000)
@@ -15,7 +19,11 @@ export async function api(path, { method = 'GET', data, format = 'json' } = {}) 
       ...(data !== undefined ? { body: JSON.stringify(data) } : {}),
     })
     if (response.ok && format === 'text') return response.text()
-    const result = await response.json().catch(() => ({}))
+    if (response.ok && response.status === 204) return null
+    const result = await response.json().catch(() => {
+      if (response.ok) throw new Error('The server returned an unreadable response. Please try again.')
+      return {}
+    })
     if (!response.ok) {
       if (response.status === 401 && path !== 'auth/login/') window.dispatchEvent(new Event('session-expired'))
       const error = new Error(result.error || `The request failed (HTTP ${response.status}). Please try again.`)

@@ -27,7 +27,7 @@ export async function verifyDraftOrder(ctx, orderId, kind) {
       await fill('.company-picker select', String(secondCompanyId))
       await until(() => evaluate('window.__discardChecks >= 2'), 'company-change guard')
       await until(() => evaluate(`document.querySelector('.company-picker select').value === '${companyId}'`), 'cancelled company change')
-      await click('.account-actions button')
+      await click('button[aria-label="User account menu"]'); await click('.sign-out')
       await until(() => evaluate('window.__discardChecks >= 3'), 'sign-out guard')
       assert.ok((await browserAPI('auth/session/')).data.user)
     } finally { await evaluate('window.confirm = window.__originalConfirm; delete window.__originalConfirm') }

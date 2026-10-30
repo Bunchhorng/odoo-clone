@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Activity, Contact, Invoice, Opportunity, Order, Payment, Product, ProductCategory, Project, StockMovement, Task
+from .models import AccountingSettings, Activity, Contact, Department, Employee, HelpdeskTicket, TicketMessage, TimesheetEntry, Invoice, JournalEntry, JournalLine, LedgerAccount, Opportunity, Order, Payment, Product, ProductCategory, Project, PurchaseReceipt, StockMovement, Task
 
 
 class BusinessReadOnlyAdmin(admin.ModelAdmin):
@@ -17,5 +17,5 @@ class BusinessReadOnlyAdmin(admin.ModelAdmin):
         return False
 
 
-for model in (Activity, Contact, Invoice, Opportunity, Order, Payment, Product, ProductCategory, Project, StockMovement, Task):
+for model in (AccountingSettings, Activity, Contact, Department, Employee, HelpdeskTicket, TicketMessage, TimesheetEntry, Invoice, JournalEntry, JournalLine, LedgerAccount, Opportunity, Order, Payment, Product, ProductCategory, Project, PurchaseReceipt, StockMovement, Task):
     admin.site.register(model, BusinessReadOnlyAdmin)

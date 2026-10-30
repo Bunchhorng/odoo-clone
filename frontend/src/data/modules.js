@@ -6,12 +6,34 @@ export const modules = [
   { name: 'Purchase', path: '/purchase', icon: 'cart', color: '#4b9eb8', description: 'RFQs and purchase orders' },
   { name: 'Inventory', path: '/inventory', icon: 'box', color: '#ac795b', description: 'Products and stock movements' },
   { name: 'Invoicing', path: '/invoicing', icon: 'receipt', color: '#4ca496', description: 'Invoices, bills, and payments' },
+  { name: 'Accounting', path: '/accounting', icon: 'chart', color: '#638b6b', description: 'Journal entries and financial reports' },
   { name: 'Project', path: '/projects', icon: 'project', color: '#a177b9', description: 'Projects and task boards' },
+  { name: 'Employees', path: '/employees', icon: 'users', color: '#7c9b6b', description: 'Work directory and departments' },
+  { name: 'Timesheets', path: '/timesheets', icon: 'clock', color: '#5197a5', description: 'Project time and approvals' },
+  { name: 'Helpdesk', path: '/helpdesk', icon: 'support', color: '#b7787c', description: 'Support tickets and follow-up' },
   { name: 'Team', path: '/team', icon: 'team', color: '#579ac0', description: 'People and company access' },
   { name: 'Settings', path: '/settings', icon: 'settings', color: '#7c8694', description: 'Companies and preferences' },
 ]
 
 export const catalogDefinitions = {
+  departments: {
+    title: 'Departments', singular: 'Department', defaultView: 'list', icon: 'team',
+    fields: [{ key: 'name', label: 'Department name', required: true, maxlength: 100 }],
+    columns: [{ key: 'name', label: 'Department' }],
+  },
+  employees: {
+    title: 'Employees', singular: 'Employee', defaultView: 'cards', icon: 'users',
+    fields: [
+      { key: 'name', label: 'Name', required: true },
+      { key: 'employee_code', label: 'Employee code', required: true, maxlength: 64 },
+      { key: 'job_title', label: 'Job title', maxlength: 100 },
+      { key: 'department_id', label: 'Department', type: 'relation', source: 'departments' },
+      { key: 'work_email', label: 'Work email', type: 'email' },
+      { key: 'work_phone', label: 'Work phone', maxlength: 50 },
+      { key: 'user_id', label: 'Team account', type: 'relation', source: 'members', help: 'Link an existing teammate so they can log their own time. Each account can link to one employee.' },
+    ],
+    columns: [{ key: 'name', label: 'Employee' }, { key: 'employee_code', label: 'Code' }, { key: 'job_title', label: 'Job title' }, { key: 'department_name', label: 'Department', sort: false }, { key: 'work_email', label: 'Work email' }],
+  },
   contacts: {
     title: 'Contacts', singular: 'Contact', defaultView: 'cards', icon: 'users',
     fields: [
