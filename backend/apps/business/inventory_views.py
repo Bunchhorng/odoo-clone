@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from apps.companies.access import membership_for
 from apps.core.api import APIError, api, json_body
-from .inventory import adjustment, correct_movement, receive_purchase
+from .inventory import adjustment, correct_movement, receive_purchase, reserve_sale
 from .models import Order, Product, PurchaseReceipt, StockLocation, StockMovement
 from .services import ZERO, date_value, scoped, stock_for, write_access
 from .views import order_data, page
@@ -63,6 +63,17 @@ def receipts(request, company_id, record_id):
         order = scoped(Order, company_id, record_id)
         receipt, created = receive_purchase(order, request.user, json_body(request, {"lines", "notes", "request_id", "expected_version"}))
         return JsonResponse({"receipt": receipt_data(receipt), "order": order_data(order, True), "replayed": not created}, status=201 if created else 200)
+
+
+@api(["POST"])
+def reservations(request, company_id, record_id):
+    with transaction.atomic():
+        write_access(request.user, company_id)
+        order = scoped(Order, company_id, record_id)
+        rows, created = reserve_sale(order, request.user, json_body(request, {"lines", "request_id"}))
+        return JsonResponse({"reservations": [{"id": item.pk, "order_line_id": item.order_line_id,
+            "product_id": item.product_id, "location_id": item.location_id, "quantity": item.quantity,
+            "state": item.state} for item in rows], "replayed": not created}, status=201 if created else 200)
 
 
 @api(["GET", "POST"])

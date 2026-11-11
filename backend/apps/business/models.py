@@ -156,6 +156,23 @@ class PurchaseReceipt(CompanyRecord):
         constraints = [models.UniqueConstraint(fields=("company", "number"), name="business_company_receipt_number")]
 
 
+class StockReservation(CompanyRecord):
+    """A demand allocation; it never changes the physical stock ledger."""
+    order_line = models.ForeignKey(OrderLine, on_delete=models.PROTECT, related_name="reservations")
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="reservations")
+    location = models.ForeignKey("StockLocation", on_delete=models.PROTECT, related_name="reservations")
+    request_id = models.UUIDField()
+    quantity = models.DecimalField(max_digits=12, decimal_places=3, validators=[MinValueValidator(Decimal("0.001"))])
+    state = models.CharField(max_length=12, default="active", choices=[
+        ("active", "Active"), ("released", "Released"), ("consumed", "Consumed"),
+    ])
+    actor_email = models.EmailField()
+
+    class Meta(CompanyRecord.Meta):
+        constraints = [models.UniqueConstraint(fields=("company", "request_id", "order_line"), name="business_reserve_request_line")]
+        indexes = [models.Index(fields=("company", "product", "location", "state"), name="business_reserve_stock")]
+
+
 class StockLocation(CompanyRecord):
     class Usage(models.TextChoices):
         INTERNAL = "internal", "Internal"

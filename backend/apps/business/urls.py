@@ -30,6 +30,7 @@ urlpatterns = [
     path("orders/<int:record_id>/", views.order_item, name="order"),
     path("orders/<int:record_id>/actions/", views.order_action, name="order-action"),
     path("orders/<int:record_id>/receipts/", inventory_views.receipts, name="receipts"),
+    path("orders/<int:record_id>/reservations/", inventory_views.reservations, name="reservations"),
     path("invoices/", views.invoices, name="invoices"),
     path("invoices/<int:record_id>/", views.invoice_item, name="invoice"),
     path("invoices/<int:record_id>/actions/", views.invoice_action, name="invoice-action"),

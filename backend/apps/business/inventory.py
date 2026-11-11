@@ -4,15 +4,61 @@ import json
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from django.db.models import DecimalField, Sum, Value
+from django.db.models import DecimalField, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from apps.core.api import APIError, text_field
-from .models import Product, PurchaseReceipt, StockMovement
+from .locations import ensure_defaults
+from .models import Product, PurchaseReceipt, StockMovement, StockReservation
 from .services import ZERO, check_version, decimal_value, next_number, positive_id, record_activity, scoped, stock_for
 
 MAX_QUANTITY = Decimal("999999999.999")
+
+
+def reserve_sale(order, user, data):
+    """Reserve confirmed-sale goods at the current default internal location."""
+    if order.kind != "sale" or order.status != "confirmed":
+        raise APIError("Only confirmed sales orders can reserve stock.", 409)
+    request_id = request_uuid(data, required=True)
+    raw = data.get("lines")
+    if not isinstance(raw, list) or not raw:
+        raise APIError("Choose one or more goods lines to reserve.")
+    requested = {}
+    for item in raw:
+        if not isinstance(item, dict) or set(item) != {"line_id", "quantity"}:
+            raise APIError("Each reservation line needs only line_id and quantity.")
+        line_id = positive_id(item["line_id"])
+        if line_id in requested:
+            raise APIError("Each sales line may appear only once in a reservation.")
+        requested[line_id] = decimal_value(item["quantity"], "Reservation quantity", places=3,
+            minimum=Decimal("0.001"), maximum=MAX_QUANTITY)
+    existing = list(StockReservation.objects.filter(request_id=request_id).select_related("order_line"))
+    if existing:
+        existing_lines = {row.order_line_id: row.quantity for row in existing}
+        if (any(row.company_id != order.company_id or row.order_line.order_id != order.pk for row in existing)
+                or existing_lines != requested):
+            raise APIError("This reservation request was already used with different details.", 409)
+        return existing, False
+    location, _ = ensure_defaults(order.company_id)
+    lines = {line.pk: line for line in order.lines.select_related("product").filter(product_kind="goods")}
+    if set(requested) - set(lines):
+        raise APIError("Choose goods lines belonging to this sales order.")
+    rows = []
+    for line_id, quantity in requested.items():
+        line = lines[line_id]
+        active_line = StockReservation.objects.filter(order_line=line, state="active").aggregate(value=Sum("quantity"))["value"] or ZERO
+        if quantity + active_line > line.quantity:
+            raise APIError(f"The reservation exceeds the remaining quantity for {line.description}.", 409)
+        on_hand = StockMovement.objects.filter(product=line.product).filter(Q(source_location=location) | Q(destination_location=location)).aggregate(value=Sum("quantity"))["value"] or ZERO
+        active_product = StockReservation.objects.filter(product=line.product, location=location, state="active").aggregate(value=Sum("quantity"))["value"] or ZERO
+        if quantity > on_hand - active_product:
+            raise APIError(f"Insufficient available stock for {line.product.name}.", 409)
+        rows.append(StockReservation(company_id=order.company_id, order_line=line, product=line.product,
+            location=location, request_id=request_id, quantity=quantity, actor_email=user.email))
+    StockReservation.objects.bulk_create(rows)
+    record_activity(user, order.company_id, "orders", order, f"Reserved stock for {order.number}")
+    return rows, True
 
 
 def request_uuid(data, *, required=False):
