@@ -99,3 +99,8 @@ the normal local startup or with `python manage.py migrate`.
 See [ERP-API.md](ERP-API.md) and [VERIFICATION.md](VERIFICATION.md). Warehouses,
 locations, reservations, lots/serials, valuation and automated replenishment remain
 outside this phase.
+
+The subsequent [Inventory V2 INV-01 milestone](INVENTORY-V2-INV-01.md) adds warehouse
+and location configuration plus protected movement endpoints, preserving the
+receipt/return behavior described here. Existing posting APIs use the default
+warehouse; transfers and reservations remain outside that milestone.

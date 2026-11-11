@@ -31,7 +31,7 @@ unimplemented applications are not presented as working apps.
 | Product catalog | SKU, goods/services, categories, barcode storage, prices/cost, units, reorder threshold, filters/sorting, bulk archive/restore, validated CSV import/export | Variants, images, barcode scanning, multiple units and price lists, XLSX |
 | Sales | CRM-linked draft quotations, editable lines, tax percentage, decimal totals, version-checked saves/transitions, full delivery, invoice creation, print | Discounts, signatures, email, customer portal, partial delivery/invoicing, subscriptions, returns |
 | Purchase | RFQs, supplier lines/costs, confirmation, partial/full receipts, line quantity tracking, supplier returns for replacement, vendor bill creation | Vendor price rules, tendering, approvals, replenishment, receipt/bill matching, partial billing and credits |
-| Inventory | Searchable/filterable movement ledger, on-hand balances, retry-safe adjustments, linked reversals, no-negative-stock rule, idempotent receipts/deliveries | Warehouses/locations, transfers, reservations, lots/serials, picking routes, valuation, scanning |
+| Inventory | Searchable/filterable movement ledger, on-hand balances, retry-safe adjustments, linked reversals, no-negative-stock rule, idempotent receipts/deliveries, company warehouses and validated location hierarchies, in-place legacy endpoint assignment (INV-01) | Per-operation warehouse routing, transfers, reservations, lots/serials, picking routes, valuation, scanning |
 | Invoicing | Order-based customer invoices/vendor bills, snapshots, issue/cancel, unpaid cancellation correction, due dates, manual partial/full payments, print/PDF via browser | Credit notes, standalone invoices, legal localization, electronic invoices, automated payment processing |
 | Accounting | Fixed chart, balanced invoice/payment journals, unpaid cancellation reversals, owner date locks, explicit historical import, trial balance/CSV, profit/loss and balance sheet, linked source documents | Manual/opening entries, configurable chart, credit notes, tax reports/localization, bank feeds/reconciliation, assets and analytic accounting |
 | Projects | Projects, customer link, tasks, assignee, due dates, priorities, Kanban/list, archive/restore, linked project/task/support time | Dependencies, milestones, planning, recurring tasks, time billing and profitability |
@@ -44,6 +44,8 @@ unimplemented applications are not presented as working apps.
 | Helpdesk | Internal ticket CRUD, assignment, statuses, overdue/mine filters, notes and full resolution history, task conversion, support-time links | Customer portal, email, SLAs, knowledge base and appointments |
 | Marketing | Not implemented | Email/SMS/social campaigns, consent, automations and events |
 | Production operations | Local Docker, migrations, tests, health checks, database-backed authentication throttles, CI configuration | Deployment settings, HTTPS, trusted-ingress throttle tuning, backups/restore, monitoring, release pipeline |
+
+The [INV-01 delivery](INVENTORY-V2-INV-01.md) keeps all existing posting APIs on the default warehouse. Additional warehouse/location configuration does not claim implemented transfers or reservations.
 
 ## Design references
 

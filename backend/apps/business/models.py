@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from django.conf import settings
 from django.core.validators import MinValueValidator, MaxValueValidator
-from django.db import models
+from django.db import models, router, transaction
 from django.utils import timezone
 
 
@@ -156,6 +156,61 @@ class PurchaseReceipt(CompanyRecord):
         constraints = [models.UniqueConstraint(fields=("company", "number"), name="business_company_receipt_number")]
 
 
+class StockLocation(CompanyRecord):
+    class Usage(models.TextChoices):
+        INTERNAL = "internal", "Internal"
+        SUPPLIER = "supplier", "Supplier"
+        CUSTOMER = "customer", "Customer"
+        INVENTORY = "inventory", "Inventory adjustment"
+        VIEW = "view", "View / grouping"
+
+    name = models.CharField(max_length=100)
+    code = models.CharField(max_length=64)
+    usage = models.CharField(max_length=12, choices=Usage.choices, default=Usage.INTERNAL)
+    parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="children")
+    is_active = models.BooleanField(default=True)
+    system_key = models.CharField(max_length=16, null=True, blank=True, editable=False)
+
+    class Meta(CompanyRecord.Meta):
+        ordering = ("code", "id")
+        constraints = [
+            models.UniqueConstraint(fields=("company", "code"), name="business_location_code"),
+            models.UniqueConstraint(fields=("company", "system_key"), name="business_location_system"),
+            models.CheckConstraint(condition=models.Q(usage__in=["internal", "supplier", "customer", "inventory", "view"]), name="business_location_usage"),
+        ]
+        indexes = [models.Index(fields=("company", "usage", "is_active"), name="business_location_scope")]
+
+    def clean(self):
+        from .locations import validate_location
+        validate_location(self)
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+
+class Warehouse(CompanyRecord):
+    name = models.CharField(max_length=100)
+    code = models.CharField(max_length=16)
+    stock_location = models.OneToOneField(StockLocation, on_delete=models.PROTECT, related_name="warehouse")
+    is_active = models.BooleanField(default=True)
+    system_key = models.CharField(max_length=16, null=True, blank=True, editable=False)
+
+    class Meta(CompanyRecord.Meta):
+        ordering = ("code", "id")
+        constraints = [
+            models.UniqueConstraint(fields=("company", "code"), name="business_warehouse_code"),
+            models.UniqueConstraint(fields=("company", "system_key"), name="business_warehouse_system"),
+        ]
+        indexes = [models.Index(fields=("company", "is_active"), name="business_warehouse_scope")]
+
+    def clean(self):
+        from .locations import validate_warehouse
+        validate_warehouse(self)
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+
 class StockMovement(CompanyRecord):
     product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="movements")
     order = models.ForeignKey(Order, null=True, blank=True, on_delete=models.PROTECT, related_name="movements")
@@ -164,9 +219,36 @@ class StockMovement(CompanyRecord):
     request_id = models.UUIDField(null=True, blank=True, unique=True)
     return_of = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="returns")
     reversal_of = models.OneToOneField("self", null=True, blank=True, on_delete=models.PROTECT, related_name="reversal")
+    source_location = models.ForeignKey(StockLocation, on_delete=models.PROTECT, related_name="outgoing_movements")
+    destination_location = models.ForeignKey(StockLocation, on_delete=models.PROTECT, related_name="incoming_movements")
+    location_inferred = models.BooleanField(default=False, editable=False)
     quantity = models.DecimalField(max_digits=12, decimal_places=3)
     reason = models.CharField(max_length=300)
     actor_email = models.EmailField()
+
+    class Meta(CompanyRecord.Meta):
+        constraints = [models.CheckConstraint(condition=~models.Q(source_location=models.F("destination_location")), name="business_movement_distinct_locs")]
+        indexes = [
+            models.Index(fields=("company", "source_location", "product"), name="business_stock_source"),
+            models.Index(fields=("company", "destination_location", "product"), name="business_stock_destination"),
+        ]
+
+    def clean(self):
+        from .locations import validate_movement_locations
+        validate_movement_locations(self)
+
+    def save(self, *args, **kwargs):
+        # Retain compatibility with existing ledger writers, seeds and ORM callers.
+        # Bulk writes intentionally require explicit endpoints (enforced by NOT NULL).
+        using = kwargs.get("using") or router.db_for_write(type(self), instance=self)
+        from apps.companies.models import Company
+        from .locations import assign_movement_locations
+        with transaction.atomic(using=using):
+            Company.objects.using(using).select_for_update().get(pk=self.company_id)
+            if not self.source_location_id and not self.destination_location_id:
+                assign_movement_locations(self, using=using)
+            self.clean()
+            return super().save(*args, **kwargs)
 
 
 class Invoice(CompanyRecord):

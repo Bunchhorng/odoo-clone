@@ -13,6 +13,7 @@ import AccountingView from '../views/AccountingView.vue'
 import TimesheetsView from '../views/TimesheetsView.vue'
 import HelpdeskView from '../views/HelpdeskView.vue'
 import StockView from '../views/StockView.vue'
+import InventoryStructureView from '../views/InventoryStructureView.vue'
 import SettingsView from '../views/SettingsView.vue'
 import AccountView from '../views/AccountView.vue'
 import ForgotPasswordView from '../views/ForgotPasswordView.vue'
@@ -33,6 +34,8 @@ const router = createRouter({
     { path: '/crm', component: CatalogView, props: { resource: 'opportunities' }, meta: { requiresAuth: true } },
     { path: '/inventory', component: CatalogView, props: { resource: 'products' }, meta: { requiresAuth: true } },
     { path: '/inventory/movements', component: StockView, meta: { requiresAuth: true } },
+    { path: '/inventory/warehouses', component: InventoryStructureView, props: { resource: 'warehouses' }, meta: { requiresAuth: true } },
+    { path: '/inventory/locations', component: InventoryStructureView, props: { resource: 'locations' }, meta: { requiresAuth: true } },
     { path: '/projects', component: CatalogView, props: { resource: 'projects' }, meta: { requiresAuth: true } },
     { path: '/tasks', component: CatalogView, props: { resource: 'tasks' }, meta: { requiresAuth: true } },
     { path: '/sales/:recordId?', component: OrdersView, props: { kind: 'sale' }, meta: { requiresAuth: true } },

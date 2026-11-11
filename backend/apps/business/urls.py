@@ -4,9 +4,14 @@ from . import catalog_transfer
 from . import inventory_views
 from . import accounting_views
 from . import operations_views
+from . import location_views
 
 app_name = "business"
 urlpatterns = [
+    path("warehouses/", location_views.warehouses, name="warehouses"),
+    path("warehouses/<int:record_id>/", location_views.warehouse_item, name="warehouse"),
+    path("locations/", location_views.locations, name="locations"),
+    path("locations/<int:record_id>/", location_views.location_item, name="location"),
     path("helpdesk/", operations_views.tickets, name="helpdesk"),
     path("helpdesk/<int:record_id>/", operations_views.ticket_item, name="ticket"),
     path("helpdesk/<int:record_id>/actions/", operations_views.ticket_actions, name="ticket-actions"),

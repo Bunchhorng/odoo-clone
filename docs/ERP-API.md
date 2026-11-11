@@ -310,9 +310,19 @@ with current `stock_quantity`. Changed details under a used UUID return 409.
 Original entries remain immutable. Returns leave vendor bills/payments unchanged;
 partial billing and credit notes are separate future workflows.
 
-Products' on-hand quantity is the sum of all their movements. A single stock pool
-is maintained per company. No warehouse, lot, reservation, or valuation subsystem
-is implied by these endpoints.
+Products' on-hand quantity remains the signed sum of their movements. INV-01 adds
+protected source/destination location IDs and codes plus `location_inferred` to
+movement/receipt responses. `GET stock/?location_id={id}` filters either endpoint.
+Existing write payloads and quantity/retry semantics remain unchanged and use the
+default warehouse. Transfers, lots, reservations and valuation are not implemented.
+
+## Warehouses and stock locations (INV-01)
+
+Company-scoped `warehouses/` and `locations/` accept GET/POST; their `{id}/` routes
+accept GET/PATCH/DELETE. DELETE archives, never hard deletes. Members read;
+owners/admins write. See [INV-01 API and migration rules](INVENTORY-V2-INV-01.md)
+for field allowlists, filters, hierarchy validation, default posting records and
+archive protections.
 
 ## Employees, Timesheets and Helpdesk
 

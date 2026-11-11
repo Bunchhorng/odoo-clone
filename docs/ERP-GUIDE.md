@@ -108,8 +108,11 @@ stock count`, then select **Record adjustment**.
 
 Use a negative change for a reduction. The system rejects changes that would make
 stock negative. Quantities on the Products screen are calculated from the movement
-ledger. Services do not have stock movements. There is one stock pool per company;
-warehouses, locations, lots, reservations, and valuation are not implemented yet.
+ledger. Services do not have stock movements. Company totals remain the signed
+movement sum. **Inventory > Warehouses / Locations** now manages company-owned
+warehouse and location configuration; existing posting APIs use the default
+warehouse. Transfers, lots, reservations and valuation are not implemented.
+See [INV-01](INVENTORY-V2-INV-01.md) for archive rules and historical assignments.
 
 Movement history now supports product/type/date filters and reference searches.
 Each manual adjustment can be reversed once with a reason, preserving both ledger

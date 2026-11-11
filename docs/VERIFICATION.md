@@ -14,6 +14,17 @@ document journals, posting locks, financial reports and source-document tracing.
 The [service application phase](SERVICE-APPLICATIONS.md) adds employee/department
 directories, project time review and internal Helpdesk with task/time links.
 
+## Planning-only audit: sales/inventory partial fulfillment
+
+On **2026-11-11**, a design audit covered partial sales deliveries, backorders,
+reservations, transfers, customer returns, and multiple/partial invoices. It added
+[the implementation plan](SALES-INVENTORY-PARTIAL-FULFILLMENT-PLAN.md) and
+[proof report](testing/SALES-INVENTORY-PARTIAL-FULFILLMENT-PROOF.md), but **no
+application feature code**. Consequently, no feature API/E2E/concurrency/migration
+test result or screenshot exists for that scope, and it remains Not implemented.
+Existing INV-01 warehouse/location verification must not be treated as proof of
+reservations, transfers, partial sales delivery, or multi-invoice support.
+
 Verified on **2026-10-29**, Asia/Bangkok, against the local Docker/MySQL stack.
 
 ## Automated checks

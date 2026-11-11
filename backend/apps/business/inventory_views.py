@@ -8,14 +8,14 @@ from django.utils import timezone
 from apps.companies.access import membership_for
 from apps.core.api import APIError, api, json_body
 from .inventory import adjustment, correct_movement, receive_purchase
-from .models import Order, Product, PurchaseReceipt, StockMovement
+from .models import Order, Product, PurchaseReceipt, StockLocation, StockMovement
 from .services import ZERO, date_value, scoped, stock_for, write_access
 from .views import order_data, page
 
 
 def movement_queryset(company_id):
     return StockMovement.objects.filter(company_id=company_id).select_related(
-        "product", "order", "receipt", "reversal",
+        "product", "order", "receipt", "reversal", "source_location", "destination_location",
     ).annotate(returned_quantity=Sum("returns__quantity"))
 
 
@@ -31,6 +31,9 @@ def movement_data(item):
             "receipt_id": item.receipt_id, "receipt_number": item.receipt.number if item.receipt_id else "",
             "receipt_notes": item.receipt.notes if item.receipt_id else "",
             "request_id": item.request_id, "kind": kind, "return_of_id": item.return_of_id,
+            "source_location_id": item.source_location_id, "source_location_code": item.source_location.code,
+            "destination_location_id": item.destination_location_id, "destination_location_code": item.destination_location.code,
+            "location_inferred": item.location_inferred,
             "reversal_of_id": item.reversal_of_id, "reversed_by_id": reversal.pk if reversal else None,
             "returnable_quantity": returnable, "can_reverse": kind == "adjustment" and not reversal and item.quantity != 0,
             "created_at": item.created_at, "actor_email": item.actor_email}
@@ -71,6 +74,9 @@ def stock(request, company_id):
             queryset = queryset.filter(product=scoped(Product, company_id, request.GET["product_id"]))
         if request.GET.get("order_id"):
             queryset = queryset.filter(order=scoped(Order, company_id, request.GET["order_id"]))
+        if request.GET.get("location_id"):
+            location = scoped(StockLocation, company_id, request.GET["location_id"])
+            queryset = queryset.filter(Q(source_location=location) | Q(destination_location=location))
         query = request.GET.get("q", "").strip()[:200]
         if query:
             queryset = queryset.filter(Q(product__name__icontains=query) | Q(product__sku__icontains=query) |

@@ -30,7 +30,7 @@ export const moduleNavigation: Record<string, NavigationItem[]> = {
   '/crm': links(['Pipeline', '/crm'], ['Quotations', '/sales']),
   '/sales': links(['Quotations & orders', '/sales'], ['Customers', '/contacts'], ['Products', '/inventory']),
   '/purchase': links(['Requests & orders', '/purchase'], ['Suppliers', '/contacts'], ['Products', '/inventory']),
-  '/inventory': links(['Products', '/inventory'], ['Stock movements', '/inventory/movements'], ['Purchase orders', '/purchase']),
+  '/inventory': links(['Products', '/inventory'], ['Stock movements', '/inventory/movements'], ['Warehouses', '/inventory/warehouses'], ['Locations', '/inventory/locations'], ['Purchase orders', '/purchase']),
   '/invoicing': links(['Invoices & bills', '/invoicing'], ['Sales', '/sales'], ['Purchase', '/purchase']),
   '/accounting': links(['Accounting', '/accounting'], ['Invoices & bills', '/invoicing']),
   '/projects': links(['Projects', '/projects'], ['All tasks', '/tasks'], ['Timesheets', '/timesheets']),
@@ -45,6 +45,7 @@ export function pageLabel(path: string) {
   const known: Record<string, string> = {
     '/': 'Applications', '/account': 'Account & security', '/setup': 'Getting started',
     '/companies': 'Companies', '/tasks': 'All tasks', '/inventory/movements': 'Stock movements',
+    '/inventory/warehouses': 'Warehouses', '/inventory/locations': 'Stock locations',
     '/employees/departments': 'Departments',
   }
   return known[path] || activeApplication(path)?.name || 'Workspace'
