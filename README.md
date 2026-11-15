@@ -97,9 +97,12 @@ To explore a separate sample company with your existing account:
 docker compose exec backend python manage.py seed_demo --email admin@kerp.local
 ```
 
-Replace the email if needed, reload KERP, and select **KERP Demo**. This creates
+Replace the email if needed, reload KERP, and select **Odoo Demo**. This creates
 sample data in its own company and leaves existing companies/passwords unchanged.
-Repeating the command leaves the existing demo unchanged.
+Repeating the command leaves the existing demo unchanged. Verify, preview, or
+remove only that isolated workspace with `--verify`, `--dry-run`, or
+`--reset-demo --confirm-reset`; see [Demo seeders](docs/DEMO-SEEDERS.md). The
+command refuses non-development Django environments.
 
 Source directories are mounted into the development containers. Django reloads
 Python changes and Vite reloads Vue changes. When dependency files change, rebuild

@@ -40,6 +40,10 @@ export const useAuthStore = defineStore('auth', () => {
     await refresh()
     apply(await api('auth/login/', { method: 'POST', data: { email, password } }))
   }
+  async function signUp(email, password, passwordConfirmation) {
+    await refresh()
+    apply(await api('auth/register/', { method: 'POST', data: { email, password, password_confirmation: passwordConfirmation } }))
+  }
   async function signOut() {
     if (!mayLeave()) return false
     await api('auth/logout/', { method: 'POST' })
@@ -58,5 +62,5 @@ export const useAuthStore = defineStore('auth', () => {
     finally { busy.value = false }
   }
   return { user, companies, activeCompanyId, activeCompany, canManage, busy, loading, error,
-    initialize, refresh, clear, signIn, signOut, selectCompany, createCompany, registerLeaveGuard }
+    initialize, refresh, clear, signIn, signUp, signOut, selectCompany, createCompany, registerLeaveGuard }
 })

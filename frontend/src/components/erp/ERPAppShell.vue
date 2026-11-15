@@ -73,7 +73,7 @@ function activeLink(path: string) {
           <p v-if="!filteredApps.length" role="status" class="muted">No matching applications.</p>
         </template>
       </ERPPopover>
-      <nav v-else class="public-navigation" aria-label="Main navigation"><RouterLink to="/setup">Guide</RouterLink><RouterLink to="/login">Sign in</RouterLink></nav>
+      <nav v-else class="public-navigation" aria-label="Main navigation"><RouterLink to="/setup">Guide</RouterLink><RouterLink to="/login">Sign in</RouterLink><RouterLink to="/register">Register</RouterLink></nav>
       <div class="shell-tools">
         <span class="connection-badge" :class="health.status" role="status" title="API and database connectivity only. Applications report their own errors."><span class="status-dot" aria-hidden="true"></span><span>{{ statusLabel }}</span></span>
         <ERPNotificationCenter v-if="auth.user" />

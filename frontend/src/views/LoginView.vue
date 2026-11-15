@@ -32,7 +32,7 @@ async function submit() {
       <label>Password<input v-model="password" name="password" type="password" autocomplete="current-password" maxlength="1024" required :disabled="busy" /></label>
       <button class="button-primary" type="submit" :disabled="busy">{{ busy ? 'Signing in…' : 'Sign in' }} <span aria-hidden="true">→</span></button>
       <p class="form-help"><RouterLink to="/forgot-password" class="text-link">Forgot your password?</RouterLink></p>
-      <p class="form-help">Need an account? Contact your administrator. See the <RouterLink to="/setup" class="text-link">setup guide</RouterLink>.</p>
+      <p class="form-help">Need an account? <RouterLink to="/register" class="text-link">Create one</RouterLink>.</p>
     </form>
   </section>
 </template>
