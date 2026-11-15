@@ -7,6 +7,7 @@ export interface AppDefinition {
   icon: string
   color: string
   description: string
+  category?: string
   status?: 'available' | 'coming-soon'
   roles?: CompanyRole[]
   requiresCompany?: boolean

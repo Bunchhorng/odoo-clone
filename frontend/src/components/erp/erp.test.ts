@@ -15,8 +15,8 @@ import type { AppDefinition } from '../../types/erp'
 vi.mock('../../services/api', () => ({ api: vi.fn(), getHealth: vi.fn() }))
 const wrappers: VueWrapper[] = []
 const apps: AppDefinition[] = [
-  { name: 'Sales', path: '/sales', description: 'Quotations and orders', icon: 'trend', color: '#714b83', requiresCompany: true },
-  { name: 'Future', path: '/future', description: 'Planned', icon: 'grid', color: '#714b83', status: 'coming-soon' },
+  { name: 'Sales', path: '/sales', description: 'Quotations and orders', icon: 'trend', color: '#714b83', category: 'Sales', requiresCompany: true },
+  { name: 'Future', path: '/future', description: 'Planned', icon: 'grid', color: '#714b83', category: 'Sales', status: 'coming-soon' },
   { name: 'Restricted', path: '/restricted', description: 'Owners only', icon: 'grid', color: '#714b83', roles: ['owner'] },
 ]
 function session() {
@@ -56,6 +56,13 @@ describe('launcher', () => {
     await input.trigger('keydown', { key: 'Escape' })
     expect((input.element as HTMLInputElement).value).toBe('')
     expect(wrapper.findAll('.launcher-tile')).toHaveLength(2)
+  })
+  it('groups permitted applications by their business area', async () => {
+    session()
+    const wrapper = await render(ERPAppLauncher, { props: { apps: [...apps, { name: 'Accounts', path: '/accounts', description: 'Ledger', icon: 'chart', color: '#714b83', category: 'Finance', requiresCompany: true }] } })
+    expect(wrapper.findAll('.launcher-category')).toHaveLength(2)
+    expect(wrapper.text()).toContain('Sales')
+    expect(wrapper.text()).toContain('Finance')
   })
   it('handles loading, errors, retry and the absence of a company without fake actions', async () => {
     const auth = session()

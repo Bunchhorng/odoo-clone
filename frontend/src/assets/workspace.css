@@ -54,9 +54,9 @@
 .site-footer a:hover { text-decoration: underline; }
 .public-navigation { display: flex; align-items: center; gap: 20px; font-size: var(--font-sm); }
 .shell-feedback { padding: 0 28px; }
-.launcher-page { max-width: 1280px; padding: 48px 40px 36px; margin: auto; }
+.launcher-page { max-width: 1280px; padding: 56px 40px 44px; margin: auto; }
 .launcher-heading { display: flex; align-items: center; justify-content: space-between; gap: 32px; margin-bottom: 28px; }
-.launcher-heading h1 { font-size: clamp(26px, 3vw, 32px); font-weight: 650; margin-bottom: 8px; }
+.launcher-heading h1 { max-width: 620px; font-size: clamp(30px, 3.4vw, 42px); font-weight: 650; margin-bottom: 10px; }
 .launcher-heading p:not(.eyebrow) { color: var(--text-muted); margin: 0; }
 .launcher-heading .eyebrow { font-size: 11px; margin: 0 0 8px; }
 .launcher-heading .search-field { width: 320px; flex-shrink: 0; }
@@ -68,10 +68,15 @@
 .launcher-context > a { margin-left: auto; flex-shrink: 0; }
 .launcher-results { display: flex; justify-content: space-between; gap: 16px; margin: 24px 0 16px; font-size: var(--font-xs); color: var(--text-muted); }
 kbd { display: inline-block; padding: 1px 5px; border: 1px solid var(--border); background: var(--surface); border-radius: 3px; font-size: inherit; }
+.launcher-catalog { display: grid; gap: 34px; }
+.launcher-category { border-top: 1px solid var(--border); padding-top: 16px; }
+.launcher-category > header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.launcher-category h2 { margin: 0; font-size: var(--font-lg); font-weight: 700; }
+.launcher-category > header span { color: var(--text-muted); font-size: var(--font-xs); }
 .launcher-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; padding: 0; margin: 0; list-style: none; }
 .launcher-grid > li { min-width: 0; }
-.launcher-tile { display: flex; align-items: flex-start; gap: 14px; position: relative; height: 100%; min-height: 132px; padding: 20px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); transition: background .15s, border-color .15s; }
-a.launcher-tile:hover { background: var(--surface-hover); border-color: var(--primary); }
+.launcher-tile { display: flex; align-items: flex-start; gap: 14px; position: relative; height: 100%; min-height: 132px; padding: 20px 18px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-sm); transition: background .15s, border-color .15s, box-shadow .15s; }
+a.launcher-tile:hover { background: var(--surface-hover); border-color: var(--primary); box-shadow: var(--shadow-menu); }
 .launcher-icon { width: 44px; height: 44px; flex-shrink: 0; display: grid; place-items: center; background: var(--surface-subtle); border: 1px solid var(--border); border-top: 3px solid var(--app-color); color: var(--primary); border-radius: var(--radius-md); }
 .launcher-icon svg { width: 24px; height: 24px; }
 .launcher-tile-copy { min-width: 0; }
