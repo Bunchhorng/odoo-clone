@@ -28,7 +28,6 @@ const signingOut = ref(false)
 const switchSearch = ref('')
 const filteredApps = computed(() => apps.value.filter(app => `${app.name} ${app.description}`.toLowerCase().includes(switchSearch.value.trim().toLowerCase())))
 const initials = computed(() => (auth.user?.name || auth.user?.email || 'K').slice(0, 1).toUpperCase())
-const statusLabel = computed(() => ({ checking: 'Checking API', connected: 'API connected', disconnected: 'API unavailable' })[health.status])
 let interval: ReturnType<typeof setInterval>
 function checkWhenVisible() { if (document.visibilityState === 'visible') health.check() }
 onMounted(() => {
@@ -75,7 +74,6 @@ function activeLink(path: string) {
       </ERPPopover>
       <nav v-else class="public-navigation" aria-label="Main navigation"><RouterLink to="/setup">Guide</RouterLink><RouterLink to="/login">Sign in</RouterLink><RouterLink to="/register">Register</RouterLink></nav>
       <div class="shell-tools">
-        <span class="connection-badge" :class="health.status" role="status" title="API and database connectivity only. Applications report their own errors."><span class="status-dot" aria-hidden="true"></span><span>{{ statusLabel }}</span></span>
         <ERPNotificationCenter v-if="auth.user" />
         <ERPPopover :label="auth.user ? 'User account menu' : 'Appearance'" panel-class="account-popover">
           <template #trigger><span v-if="auth.user" class="user-avatar" aria-hidden="true">{{ initials }}</span><AppIcon v-else name="settings" /><AppIcon name="chevron" class="chevron" /></template>
