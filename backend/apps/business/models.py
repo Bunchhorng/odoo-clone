@@ -167,10 +167,42 @@ class StockReservation(CompanyRecord):
         ("active", "Active"), ("released", "Released"), ("consumed", "Consumed"),
     ])
     actor_email = models.EmailField()
+    operation = models.ForeignKey("StockOperation", null=True, blank=True, on_delete=models.PROTECT,
+                                  related_name="reservations")
 
     class Meta(CompanyRecord.Meta):
         constraints = [models.UniqueConstraint(fields=("company", "request_id", "order_line"), name="business_reserve_request_line")]
         indexes = [models.Index(fields=("company", "product", "location", "state"), name="business_reserve_stock")]
+
+
+class StockOperation(CompanyRecord):
+    """An immutable-on-completion physical sales delivery document."""
+    order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="stock_operations")
+    number = models.CharField(max_length=30)
+    request_id = models.UUIDField(unique=True)
+    source_location = models.ForeignKey("StockLocation", on_delete=models.PROTECT, related_name="delivery_operations")
+    status = models.CharField(max_length=12, default="draft", choices=[
+        ("draft", "Draft"), ("done", "Done"), ("cancelled", "Cancelled"),
+    ])
+    backorder_of = models.OneToOneField("self", null=True, blank=True, on_delete=models.PROTECT,
+                                        related_name="backorder")
+    actor_email = models.EmailField()
+
+    class Meta(CompanyRecord.Meta):
+        constraints = [models.UniqueConstraint(fields=("company", "number"), name="business_company_operation_number")]
+
+
+class StockOperationLine(models.Model):
+    operation = models.ForeignKey(StockOperation, on_delete=models.CASCADE, related_name="lines")
+    order_line = models.ForeignKey(OrderLine, on_delete=models.PROTECT, related_name="operation_lines")
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="operation_lines")
+    description = models.CharField(max_length=300)
+    planned_quantity = models.DecimalField(max_digits=12, decimal_places=3)
+    done_quantity = models.DecimalField(max_digits=12, decimal_places=3, default=0)
+
+    class Meta:
+        ordering = ("id",)
+        constraints = [models.UniqueConstraint(fields=("operation", "order_line"), name="business_operation_order_line")]
 
 
 class StockLocation(CompanyRecord):
@@ -233,6 +265,7 @@ class StockMovement(CompanyRecord):
     order = models.ForeignKey(Order, null=True, blank=True, on_delete=models.PROTECT, related_name="movements")
     order_line = models.ForeignKey(OrderLine, null=True, blank=True, on_delete=models.PROTECT, related_name="movements")
     receipt = models.ForeignKey(PurchaseReceipt, null=True, blank=True, on_delete=models.PROTECT, related_name="movements")
+    operation = models.ForeignKey(StockOperation, null=True, blank=True, on_delete=models.PROTECT, related_name="movements")
     request_id = models.UUIDField(null=True, blank=True, unique=True)
     return_of = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="returns")
     reversal_of = models.OneToOneField("self", null=True, blank=True, on_delete=models.PROTECT, related_name="reversal")
@@ -271,7 +304,9 @@ class StockMovement(CompanyRecord):
 class Invoice(CompanyRecord):
     kind = models.CharField(max_length=10, choices=[("customer", "Customer Invoice"), ("vendor", "Vendor Bill")])
     version = models.PositiveIntegerField(default=1)
-    order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name="invoice")
+    order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="invoices")
+    request_id = models.UUIDField(null=True, blank=True, unique=True)
+    payload_digest = models.CharField(max_length=64, blank=True)
     number = models.CharField(max_length=30)
     contact = models.ForeignKey(Contact, on_delete=models.PROTECT)
     contact_name = models.CharField(max_length=200)
@@ -290,6 +325,22 @@ class Invoice(CompanyRecord):
 
     class Meta(CompanyRecord.Meta):
         constraints = [models.UniqueConstraint(fields=("company", "number"), name="business_company_invoice_number")]
+
+
+class InvoiceLine(models.Model):
+    invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name="lines")
+    order_line = models.ForeignKey(OrderLine, on_delete=models.PROTECT, related_name="invoice_lines")
+    quantity = models.DecimalField(max_digits=12, decimal_places=3)
+    description = models.CharField(max_length=300)
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2)
+    tax_rate = models.DecimalField(max_digits=5, decimal_places=2)
+    subtotal = models.DecimalField(max_digits=16, decimal_places=2)
+    tax_total = models.DecimalField(max_digits=16, decimal_places=2)
+    total = models.DecimalField(max_digits=16, decimal_places=2)
+
+    class Meta:
+        ordering = ("id",)
+        constraints = [models.UniqueConstraint(fields=("invoice", "order_line"), name="business_invoice_order_line")]
 
 
 class Payment(CompanyRecord):

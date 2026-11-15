@@ -7,8 +7,8 @@ from django.utils import timezone
 
 from apps.companies.access import membership_for
 from apps.core.api import APIError, api, json_body
-from .inventory import adjustment, correct_movement, receive_purchase, reserve_sale
-from .models import Order, Product, PurchaseReceipt, StockLocation, StockMovement
+from .inventory import adjustment, correct_movement, create_delivery, operation_data, receive_purchase, release_reservations, reserve_sale, validate_delivery
+from .models import Order, Product, PurchaseReceipt, StockLocation, StockMovement, StockOperation, StockReservation
 from .services import ZERO, date_value, scoped, stock_for, write_access
 from .views import order_data, page
 
@@ -65,8 +65,15 @@ def receipts(request, company_id, record_id):
         return JsonResponse({"receipt": receipt_data(receipt), "order": order_data(order, True), "replayed": not created}, status=201 if created else 200)
 
 
-@api(["POST"])
+@api(["GET", "POST"])
 def reservations(request, company_id, record_id):
+    membership_for(request.user, company_id)
+    if request.method == "GET":
+        order = scoped(Order, company_id, record_id)
+        rows = StockReservation.objects.filter(company_id=company_id, order_line__order=order).select_related("product")
+        return page(request, rows, lambda item: {"id": item.pk, "order_line_id": item.order_line_id,
+            "product_id": item.product_id, "location_id": item.location_id, "operation_id": item.operation_id,
+            "quantity": item.quantity, "state": item.state, "request_id": item.request_id})
     with transaction.atomic():
         write_access(request.user, company_id)
         order = scoped(Order, company_id, record_id)
@@ -74,6 +81,41 @@ def reservations(request, company_id, record_id):
         return JsonResponse({"reservations": [{"id": item.pk, "order_line_id": item.order_line_id,
             "product_id": item.product_id, "location_id": item.location_id, "quantity": item.quantity,
             "state": item.state} for item in rows], "replayed": not created}, status=201 if created else 200)
+
+
+@api(["POST"])
+def release_reservation(request, company_id, record_id):
+    with transaction.atomic():
+        write_access(request.user, company_id)
+        order = scoped(Order, company_id, record_id)
+        rows, changed = release_reservations(order, request.user, json_body(request, {"request_id"}))
+        return JsonResponse({"reservations": [{"id": row.pk, "state": row.state} for row in rows], "replayed": not changed})
+
+
+@api(["GET", "POST"])
+def operations(request, company_id, record_id):
+    membership_for(request.user, company_id)
+    if request.method == "GET":
+        order = scoped(Order, company_id, record_id)
+        return page(request, StockOperation.objects.filter(company_id=company_id, order=order).prefetch_related("lines"), operation_data)
+    with transaction.atomic():
+        write_access(request.user, company_id)
+        order = scoped(Order, company_id, record_id)
+        operation, created = create_delivery(order, request.user, json_body(request, {"request_id"}))
+        return JsonResponse({"operation": operation_data(operation), "replayed": not created}, status=201 if created else 200)
+
+
+@api(["POST"])
+def operation_action(request, company_id, record_id):
+    with transaction.atomic():
+        write_access(request.user, company_id)
+        operation = scoped(StockOperation, company_id, record_id)
+        data = json_body(request, {"action", "lines"})
+        if data.get("action") != "validate":
+            raise APIError("Choose validate.")
+        operation, created, backorder = validate_delivery(operation, request.user, data)
+        return JsonResponse({"operation": operation_data(operation), "backorder": operation_data(backorder) if backorder else None,
+                             "replayed": not created})
 
 
 @api(["GET", "POST"])

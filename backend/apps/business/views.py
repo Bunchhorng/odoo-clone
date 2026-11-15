@@ -10,10 +10,10 @@ from apps.core.api import APIError, api, json_body, text_field
 from .catalog import catalog_data, catalog_queryset, definition, filtered_catalog, save_catalog
 from .accounting import active_invoice_entry, post_invoice, reverse_invoice
 from .inventory import purchase_lines
-from .models import Activity, Contact, Invoice, Opportunity, Order, Payment, Product, Project, Task, TimesheetEntry, WorkspaceSettings
+from .models import Activity, Contact, Invoice, InvoiceLine, Opportunity, Order, Payment, Product, Project, Task, TimesheetEntry, WorkspaceSettings, StockReservation
 from .services import (
     check_version, currency_for, date_value, fulfill_order, invoice_order,
-    paid_for, record_activity, register_payment, save_order, scoped, write_access,
+    paid_for, record_activity, register_payment, save_order, scoped, write_access, invoiceable_quantities,
 )
 
 
@@ -37,7 +37,7 @@ def order_data(item, detail=False):
         "id", "kind", "number", "contact_id", "contact_name", "contact_email", "contact_address", "currency",
         "date", "status", "notes", "subtotal", "tax_total", "total", "fulfilled_at", "created_at", "updated_at", "version", "opportunity_id",
     )}
-    invoice = getattr(item, "invoice", None)
+    invoice = item.invoices.order_by("-id").first()
     data["invoice_id"] = invoice.pk if invoice else None
     data["opportunity_title"] = item.opportunity.title if item.opportunity_id else ""
     data["has_stock_movements"] = bool(item.movement_count) if hasattr(item, "movement_count") else item.movements.exists()
@@ -50,11 +50,25 @@ def order_data(item, detail=False):
             "total": invoice.total, "paid": paid_for(invoice),
             "balance": invoice.total - paid_for(invoice) if invoice.status != "cancelled" else Decimal("0"),
             "journal_entry_count": invoice.journal_entries.count()} if invoice else None)
+        data["invoice_count"] = item.invoices.count()
         if item.kind == "purchase":
             progress = {line.pk: line.received_quantity for line in purchase_lines(item)}
             for line in data["lines"]:
                 line["received_quantity"] = progress.get(line["id"], Decimal("0"))
                 line["remaining_quantity"] = line["quantity"] - progress[line["id"]] if line["id"] in progress else Decimal("0")
+        elif item.kind == "sale":
+            reserved = {row["order_line_id"]: row["value"] for row in StockReservation.objects.filter(
+                order_line__order=item, state="active").values("order_line_id").annotate(value=Sum("quantity"))}
+            delivered = {row["order_line_id"]: -row["value"] for row in item.movements.filter(quantity__lt=0).values(
+                "order_line_id").annotate(value=Sum("quantity"))}
+            invoiced = {row["order_line_id"]: row["value"] for row in InvoiceLine.objects.filter(invoice__order=item).
+                exclude(invoice__status="cancelled").values("order_line_id").annotate(value=Sum("quantity"))}
+            for line in data["lines"]:
+                line["reserved_quantity"] = reserved.get(line["id"], Decimal("0"))
+                line["delivered_quantity"] = delivered.get(line["id"], Decimal("0"))
+                line["invoiced_quantity"] = invoiced.get(line["id"], Decimal("0"))
+                line["remaining_quantity"] = line["quantity"] - line["delivered_quantity"]
+            data["operation_count"] = item.stock_operations.count()
     return data
 
 
@@ -71,7 +85,10 @@ def invoice_data(item, detail=False):
     data["paid_amount"] = paid_for(item)
     data["balance"] = item.total - data["paid_amount"] if item.status != "cancelled" else Decimal("0")
     if detail:
-        data["lines"] = [line_data(line) for line in item.order.lines.all()]
+        data["lines"] = [{"id": line.pk, "order_line_id": line.order_line_id, "quantity": line.quantity,
+                          "description": line.description, "unit_price": line.unit_price, "tax_rate": line.tax_rate,
+                          "subtotal": line.subtotal, "tax_total": line.tax_total, "total": line.total}
+                         for line in item.lines.all()]
         data["payments"] = [{key: getattr(payment, key) for key in ("id", "amount", "date", "method", "reference", "request_id")} for payment in item.payments.all()]
         data["journal_entry_count"] = item.journal_entries.count()
         data["opportunity_id"] = item.order.opportunity_id
@@ -112,7 +129,7 @@ def catalog_item(request, company_id, resource, record_id):
 def orders(request, company_id):
     membership_for(request.user, company_id)
     if request.method == "GET":
-        queryset = Order.objects.filter(company_id=company_id).select_related("invoice", "opportunity").annotate(received_total=Sum("movements__quantity"), movement_count=Count("movements"))
+        queryset = Order.objects.filter(company_id=company_id).select_related("opportunity").annotate(received_total=Sum("movements__quantity"), movement_count=Count("movements"))
         if request.GET.get("opportunity_id"):
             queryset = queryset.filter(opportunity=scoped(Opportunity, company_id, request.GET["opportunity_id"]))
         if request.GET.get("kind"):
@@ -159,10 +176,8 @@ def order_action(request, company_id, record_id):
                 (action == "cancel" and order.status == "cancelled") or
                 (action == "fulfill" and order.fulfilled_at)):
             return JsonResponse(order_data(order, True))
-        if action == "invoice":
-            existing = Invoice.objects.filter(order=order).first()
-            if existing:
-                return JsonResponse(invoice_data(existing, True))
+        if action == "invoice" and Invoice.objects.filter(order=order).exists() and not any(value > 0 for value in invoiceable_quantities(order).values()):
+            return JsonResponse(invoice_data(Invoice.objects.filter(order=order).order_by("-id").first(), True))
         check_version(order, data)
         if action == "confirm":
             if order.status == "cancelled":
@@ -190,6 +205,22 @@ def order_action(request, company_id, record_id):
             raise APIError("Choose confirm, cancel, fulfill, or invoice.")
         record_activity(request.user, company_id, "orders", order, f"{action.capitalize()}: {order.number}")
         return JsonResponse(order_data(order, True))
+
+
+@api(["GET", "POST"])
+def order_invoices(request, company_id, record_id):
+    membership_for(request.user, company_id)
+    order = scoped(Order, company_id, record_id)
+    if request.method == "GET":
+        return page(request, Invoice.objects.filter(company_id=company_id, order=order), invoice_data)
+    with transaction.atomic():
+        write_access(request.user, company_id)
+        data = json_body(request, {"lines", "request_id"})
+        existed = Invoice.objects.filter(request_id=data.get("request_id")).exists() if data.get("request_id") else False
+        invoice = invoice_order(order, data)
+        if not existed:
+            record_activity(request.user, company_id, "invoices", invoice, f"Prepared {invoice.number} from {order.number}")
+        return JsonResponse(invoice_data(invoice, True), status=200 if existed else 201)
 
 
 @api(["GET"])
@@ -321,7 +352,7 @@ def dashboard(request, company_id):
         "open_tasks": Task.objects.filter(company_id=company_id, is_active=True).exclude(stage="done").count(),
         "overdue_tasks": Task.objects.filter(company_id=company_id, is_active=True, due_date__lt=timezone.localdate()).exclude(stage="done").count(),
         "pipeline": list(opportunities.values("stage").annotate(count=Count("id"), value=Sum("expected_revenue")).order_by("stage")),
-        "recent_orders": [order_data(item) for item in orders.select_related("invoice", "opportunity")[:5]],
+        "recent_orders": [order_data(item) for item in orders.select_related("opportunity")[:5]],
         "activities": [{"id": item.pk, "summary": item.summary, "actor_email": item.actor_email, "resource": item.resource, "record_id": item.record_id, "created_at": item.created_at} for item in activities[:12]],
     }
     return JsonResponse(data)

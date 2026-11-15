@@ -10,7 +10,7 @@ from django.utils import timezone
 
 from apps.core.api import APIError, text_field
 from .locations import ensure_defaults
-from .models import Product, PurchaseReceipt, StockMovement, StockReservation
+from .models import Product, PurchaseReceipt, StockMovement, StockReservation, StockOperation, StockOperationLine
 from .services import ZERO, check_version, decimal_value, next_number, positive_id, record_activity, scoped, stock_for
 
 MAX_QUANTITY = Decimal("999999999.999")
@@ -59,6 +59,115 @@ def reserve_sale(order, user, data):
     StockReservation.objects.bulk_create(rows)
     record_activity(user, order.company_id, "orders", order, f"Reserved stock for {order.number}")
     return rows, True
+
+
+def release_reservations(order, user, data):
+    """Release an entire retry-safe reservation request before it is picked."""
+    request_id = request_uuid(data, required=True)
+    rows = list(StockReservation.objects.select_for_update().filter(company_id=order.company_id,
+        request_id=request_id, order_line__order=order))
+    if not rows:
+        raise APIError("Reservation request not found for this sales order.", 404)
+    if any(row.operation_id for row in rows):
+        raise APIError("Reservations assigned to a delivery cannot be released.", 409)
+    changed = False
+    for row in rows:
+        if row.state == "active":
+            row.state = "released"; row.save(update_fields=["state", "updated_at"]); changed = True
+    if changed:
+        record_activity(user, order.company_id, "orders", order, f"Released reservation for {order.number}")
+    return rows, changed
+
+
+def operation_data(operation):
+    return {"id": operation.pk, "number": operation.number, "order_id": operation.order_id,
+            "source_location_id": operation.source_location_id, "status": operation.status,
+            "backorder_of_id": operation.backorder_of_id, "request_id": operation.request_id,
+            "lines": [{"id": line.pk, "order_line_id": line.order_line_id, "product_id": line.product_id,
+                       "description": line.description, "planned_quantity": line.planned_quantity,
+                       "done_quantity": line.done_quantity} for line in operation.lines.all()]}
+
+
+def create_delivery(order, user, data, *, backorder_of=None, quantities=None):
+    if order.kind != "sale" or order.status != "confirmed":
+        raise APIError("Deliveries require a confirmed sales order.", 409)
+    request_id = request_uuid(data, required=True)
+    existing = StockOperation.objects.filter(request_id=request_id).prefetch_related("lines").first()
+    if existing:
+        if existing.company_id != order.company_id or existing.order_id != order.pk:
+            raise APIError("This delivery request was already used with different details.", 409)
+        return existing, False
+    location, _ = ensure_defaults(order.company_id)
+    reservations = list(StockReservation.objects.select_for_update().filter(order_line__order=order,
+        state="active", operation__isnull=True).select_related("order_line", "product"))
+    by_line = {}
+    for row in reservations:
+        by_line[row.order_line_id] = by_line.get(row.order_line_id, ZERO) + row.quantity
+    if quantities is None:
+        quantities = by_line
+    if not quantities:
+        raise APIError("Reserve goods before creating a delivery.", 409)
+    lines = {line.pk: line for line in order.lines.filter(product_kind="goods").select_related("product")}
+    if set(quantities) - set(lines) or any(value <= 0 or value > by_line.get(key, ZERO) for key, value in quantities.items()):
+        raise APIError("A delivery can contain only currently reserved goods quantities.", 409)
+    operation = StockOperation.objects.create(company_id=order.company_id, order=order,
+        number=next_number(order.company_id, "PICK"), request_id=request_id, source_location=location,
+        backorder_of=backorder_of, actor_email=user.email)
+    StockOperationLine.objects.bulk_create([StockOperationLine(operation=operation, order_line=lines[line_id],
+        product=lines[line_id].product, description=lines[line_id].description, planned_quantity=quantity)
+        for line_id, quantity in quantities.items()])
+    # A reservation row is deliberately claimed by one operation, so it cannot be picked twice.
+    for row in reservations:
+        if row.order_line_id in quantities:
+            row.operation = operation; row.save(update_fields=["operation", "updated_at"])
+    operation = StockOperation.objects.prefetch_related("lines").get(pk=operation.pk)
+    record_activity(user, order.company_id, "orders", order, f"Created delivery {operation.number}: {order.number}")
+    return operation, True
+
+
+def validate_delivery(operation, user, data):
+    if operation.status == "done":
+        return operation, False, None
+    if operation.status != "draft":
+        raise APIError("Only draft deliveries can be validated.", 409)
+    raw = data.get("lines")
+    if not isinstance(raw, list) or not raw:
+        raise APIError("Supply completed quantities for this delivery.")
+    done = {}
+    for entry in raw:
+        if not isinstance(entry, dict) or set(entry) != {"line_id", "quantity"}:
+            raise APIError("Each delivery line needs only line_id and quantity.")
+        line_id = positive_id(entry["line_id"])
+        if line_id in done: raise APIError("Each delivery line may appear only once.")
+        done[line_id] = decimal_value(entry["quantity"], "Delivered quantity", places=3, minimum=ZERO, maximum=MAX_QUANTITY)
+    lines = {line.pk: line for line in operation.lines.select_related("product", "order_line")}
+    if set(done) != set(lines) or any(quantity > lines[key].planned_quantity for key, quantity in done.items()):
+        raise APIError("Delivered quantities must match this delivery's planned lines.", 409)
+    for line_id, quantity in done.items():
+        if quantity:
+            line = lines[line_id]
+            StockMovement.objects.create(company_id=operation.company_id, product=line.product, order=operation.order,
+                order_line=line.order_line, operation=operation, quantity=-quantity,
+                reason=f"Delivery {operation.number}: {operation.order.number}", actor_email=user.email)
+        lines[line_id].done_quantity = quantity
+    StockOperationLine.objects.bulk_update(list(lines.values()), ["done_quantity"])
+    operation.status = "done"; operation.save(update_fields=["status", "updated_at"])
+    remainder = {line.order_line_id: line.planned_quantity - done[line.pk] for line in lines.values() if line.planned_quantity > done[line.pk]}
+    backorder = None
+    if remainder:
+        # Reuse the claimed reservations; no extra capacity is created.
+        StockReservation.objects.filter(operation=operation, state="active").update(operation=None)
+        backorder, _ = create_delivery(operation.order, user, {"request_id": str(uuid4())}, backorder_of=operation, quantities=remainder)
+    else:
+        StockReservation.objects.filter(operation=operation, state="active").update(state="consumed")
+    goods = operation.order.lines.filter(product_kind="goods")
+    delivered = {row["order_line_id"]: -row["value"] for row in StockMovement.objects.filter(order=operation.order,
+        quantity__lt=0, operation__isnull=False).values("order_line_id").annotate(value=Sum("quantity"))}
+    if all(delivered.get(line.pk, ZERO) >= line.quantity for line in goods):
+        operation.order.fulfilled_at = timezone.now(); operation.order.version += 1
+        operation.order.save(update_fields=["fulfilled_at", "version", "updated_at"])
+    record_activity(user, operation.company_id, "orders", operation.order, f"Validated delivery {operation.number}")
+    return StockOperation.objects.prefetch_related("lines").get(pk=operation.pk), True, backorder
 
 
 def request_uuid(data, *, required=False):
@@ -162,8 +271,9 @@ def adjustment(user, company_id, data):
     product = scoped(Product, company_id, product_id)
     if product.kind != "goods" or not product.is_active:
         raise APIError("Stock adjustments require an active goods product.")
-    if stock_for(product) + quantity < 0:
-        raise APIError("This change would make stock negative.", 409)
+    reserved = StockReservation.objects.filter(company_id=company_id, product=product, state="active").aggregate(value=Sum("quantity"))["value"] or ZERO
+    if stock_for(product) + quantity < reserved:
+        raise APIError("This change would consume stock already reserved for delivery.", 409)
     movement = StockMovement.objects.create(company_id=company_id, product=product, quantity=quantity,
         reason=reason, actor_email=user.email, request_id=request_id)
     record_activity(user, company_id, "products", product, f"Stock {quantity:+}: {product.name} — {reason}")
