@@ -259,8 +259,7 @@ def invoice_order(order, data=None):
         try: request_id = UUID(str(request_id))
         except (ValueError, AttributeError): raise APIError("request_id must be a UUID.") from None
     raw = data.get("lines")
-    eligible = invoiceable_quantities(order)
-    selected = {line_id: quantity for line_id, quantity in eligible.items() if quantity > ZERO}
+    selected = None
     if raw is not None:
         if not isinstance(raw, list) or not raw: raise APIError("Choose one or more invoiceable lines.")
         selected = {}
@@ -269,6 +268,17 @@ def invoice_order(order, data=None):
             line_id = positive_id(item["line_id"])
             if line_id in selected: raise APIError("Each order line may appear only once.")
             selected[line_id] = decimal_value(item["quantity"], "Invoice quantity", places=3, minimum=Decimal("0.001"), maximum=Decimal("999999999.999"))
+        canonical = sorted((line_id, str(quantity)) for line_id, quantity in selected.items())
+        digest = hashlib.sha256(json.dumps({"order": order.pk, "lines": canonical}, sort_keys=True).encode()).hexdigest()
+        if request_id:
+            existing = Invoice.objects.filter(request_id=request_id).first()
+            if existing:
+                if existing.company_id != order.company_id or existing.order_id != order.pk or existing.payload_digest != digest:
+                    raise APIError("This invoice request was already used with different details.", 409)
+                return existing
+    eligible = invoiceable_quantities(order)
+    if selected is None:
+        selected = {line_id: quantity for line_id, quantity in eligible.items() if quantity > ZERO}
     if any(line_id not in eligible or quantity > eligible[line_id] for line_id, quantity in selected.items()) or not selected:
         raise APIError("An invoice quantity exceeds the delivered, uninvoiced quantity.", 409)
     canonical = sorted((line_id, str(quantity)) for line_id, quantity in selected.items())

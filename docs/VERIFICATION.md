@@ -14,16 +14,20 @@ document journals, posting locks, financial reports and source-document tracing.
 The [service application phase](SERVICE-APPLICATIONS.md) adds employee/department
 directories, project time review and internal Helpdesk with task/time links.
 
-## Planning-only audit: sales/inventory partial fulfillment
+## Sales/inventory partial fulfillment implementation
 
-On **2026-11-11**, a design audit covered partial sales deliveries, backorders,
-reservations, transfers, customer returns, and multiple/partial invoices. It added
-[the implementation plan](SALES-INVENTORY-PARTIAL-FULFILLMENT-PLAN.md) and
-[proof report](testing/SALES-INVENTORY-PARTIAL-FULFILLMENT-PROOF.md), but **no
-application feature code**. Consequently, no feature API/E2E/concurrency/migration
-test result or screenshot exists for that scope, and it remains Not implemented.
-Existing INV-01 warehouse/location verification must not be treated as proof of
-reservations, transfers, partial sales delivery, or multi-invoice support.
+On **2026-11-15**, backend implementation added reservations, delivery operations,
+partial deliveries with backorders, multiple invoice allocations, internal
+transfers, and approved customer returns. The focused Django suite passed **24
+tests** across delivery, partial-invoice, purchase-inventory, transfer, and return
+coverage. It includes retry-safe invoice/transfer/return requests, partial
+transfers, restockable and damaged return decisions, and over-return rejection.
+
+This is backend evidence only. Vue workflows, browser/E2E evidence, and dedicated
+concurrency coverage for transfers and customer returns are still required before
+these milestones can be called fully verified. The legacy warehouse migration
+tests intentionally traverse historical schemas and require a fresh disposable
+test database; they are not compatible with reusing `test_kerp` via `--keepdb`.
 
 Verified on **2026-10-29**, Asia/Bangkok, against the local Docker/MySQL stack.
 

@@ -172,21 +172,28 @@ def validate_delivery(operation, user, data):
 
 def create_transfer(company_id, user, data):
     request_id = request_uuid(data, required=True)
-    existing = StockTransfer.objects.filter(request_id=request_id).prefetch_related("lines").first()
-    if existing: return existing, False
-    source = scoped(StockLocation, company_id, data.get("source_location_id")); destination = scoped(StockLocation, company_id, data.get("destination_location_id"))
-    if source.pk == destination.pk or source.usage != "internal" or destination.usage != "internal" or not source.is_active or not destination.is_active:
-        raise APIError("Choose two different active internal locations.")
     raw = data.get("lines")
     if not isinstance(raw, list) or not raw: raise APIError("Choose one or more products to transfer.")
-    lines = {}; transfer = None
+    source_id = positive_id(data.get("source_location_id")); destination_id = positive_id(data.get("destination_location_id"))
+    lines = {}
     for entry in raw:
         if not isinstance(entry, dict) or set(entry) != {"product_id", "quantity"}: raise APIError("Each transfer line needs product_id and quantity.")
-        product = scoped(Product, company_id, entry["product_id"])
-        if product.kind != "goods" or product.pk in lines: raise APIError("Choose each active goods product once.")
-        lines[product.pk] = decimal_value(entry["quantity"], "Transfer quantity", places=3, minimum=Decimal("0.001"), maximum=MAX_QUANTITY)
+        product_id = positive_id(entry["product_id"])
+        if product_id in lines: raise APIError("Choose each active goods product once.")
+        lines[product_id] = decimal_value(entry["quantity"], "Transfer quantity", places=3, minimum=Decimal("0.001"), maximum=MAX_QUANTITY)
+    digest = hashlib.sha256(json.dumps({"source": source_id, "destination": destination_id, "lines": sorted((key, str(value)) for key, value in lines.items())}, sort_keys=True).encode()).hexdigest()
+    existing = StockTransfer.objects.filter(request_id=request_id).prefetch_related("lines").first()
+    if existing:
+        if existing.company_id != company_id or existing.payload_digest != digest: raise APIError("This transfer request was already used with different details.", 409)
+        return existing, False
+    source = scoped(StockLocation, company_id, source_id); destination = scoped(StockLocation, company_id, destination_id)
+    if source.pk == destination.pk or source.usage != "internal" or destination.usage != "internal" or not source.is_active or not destination.is_active:
+        raise APIError("Choose two different active internal locations.")
+    for product_id in lines:
+        product = scoped(Product, company_id, product_id)
+        if product.kind != "goods" or not product.is_active: raise APIError("Choose each active goods product once.")
     transfer = StockTransfer.objects.create(company_id=company_id, number=next_number(company_id, "TR"), request_id=request_id,
-        source_location=source, destination_location=destination, actor_email=user.email)
+        payload_digest=digest, source_location=source, destination_location=destination, actor_email=user.email)
     StockTransferLine.objects.bulk_create([StockTransferLine(transfer=transfer, product_id=product_id, quantity=quantity) for product_id, quantity in lines.items()])
     return StockTransfer.objects.prefetch_related("lines__product").get(pk=transfer.pk), True
 
@@ -216,23 +223,34 @@ def validate_transfer(transfer, user, data):
 
 def create_customer_return(order, user, data):
     if order.kind != "sale" or order.status != "confirmed": raise APIError("Customer returns require a confirmed sales order.", 409)
-    request_id = request_uuid(data, required=True); existing = CustomerReturn.objects.filter(request_id=request_id).prefetch_related("lines").first()
-    if existing: return existing, False
+    request_id = request_uuid(data, required=True)
     reason = text_field(data, "reason", maximum=300); restockable = data.get("restockable")
     if not isinstance(restockable, bool): raise APIError("restockable must be true or false.")
     raw = data.get("lines")
     if not isinstance(raw, list) or not raw: raise APIError("Choose delivered goods to return.")
-    rows = []
+    requested = {}
     for entry in raw:
         if not isinstance(entry, dict) or set(entry) != {"delivery_movement_id", "quantity"}: raise APIError("Each return line needs delivery_movement_id and quantity.")
-        movement = scoped(StockMovement, order.company_id, entry["delivery_movement_id"])
+        movement_id = positive_id(entry["delivery_movement_id"])
+        if movement_id in requested: raise APIError("Each delivery movement may appear only once in a return.")
         quantity = decimal_value(entry["quantity"], "Return quantity", places=3, minimum=Decimal("0.001"), maximum=MAX_QUANTITY)
+        requested[movement_id] = quantity
+    digest = hashlib.sha256(json.dumps({"order": order.pk, "reason": reason, "restockable": restockable,
+        "lines": sorted((key, str(value)) for key, value in requested.items())}, sort_keys=True).encode()).hexdigest()
+    existing = CustomerReturn.objects.filter(request_id=request_id).prefetch_related("lines").first()
+    if existing:
+        if existing.company_id != order.company_id or existing.order_id != order.pk or existing.payload_digest != digest:
+            raise APIError("This return request was already used with different details.", 409)
+        return existing, False
+    rows = []
+    for movement_id, quantity in requested.items():
+        movement = scoped(StockMovement, order.company_id, movement_id)
         if movement.order_id != order.pk or movement.quantity >= 0 or not movement.order_line_id: raise APIError("Choose an original sales delivery movement.")
         returned = CustomerReturnLine.objects.filter(delivery_movement=movement, customer_return__status="approved").aggregate(value=Sum("quantity"))["value"] or ZERO
         if quantity + returned > -movement.quantity: raise APIError("The return exceeds the delivered quantity.", 409)
         rows.append((movement, quantity))
     customer_return = CustomerReturn.objects.create(company_id=order.company_id, number=next_number(order.company_id, "RET"), request_id=request_id,
-        order=order, restockable=restockable, reason=reason, actor_email=user.email)
+        payload_digest=digest, order=order, restockable=restockable, reason=reason, actor_email=user.email)
     CustomerReturnLine.objects.bulk_create([CustomerReturnLine(customer_return=customer_return, order_line_id=movement.order_line_id, delivery_movement=movement, quantity=quantity) for movement, quantity in rows])
     return CustomerReturn.objects.prefetch_related("lines__delivery_movement").get(pk=customer_return.pk), True
 

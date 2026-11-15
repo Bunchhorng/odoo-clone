@@ -18,9 +18,9 @@ items.
 
 | Order | Milestone | Source documents | State | Exit condition |
 | ---: | --- | --- | --- | --- |
-| 1 | INV-02A: reservations, delivery operations, partial sale delivery and backorders | `INVENTORY-GAP-ANALYSIS.md`, `SALES-INVENTORY-PARTIAL-FULFILLMENT-PLAN.md`, `ODOO-PARITY-MATRIX.md` | In progress, unverified | Reservation/retry/concurrency, partial picking/backorder and full regression/browser evidence pass. |
-| 2 | SA-02A: per-line progress and multiple/partial invoice allocations | `SALES-GAP-ANALYSIS.md`, `CRM-SALES.md`, `ACCOUNTING-INTEGRATION.md` | Blocked by 1 | Two delivered batches can create exactly two balanced invoices without excess or duplicate allocation. |
-| 3 | Transfers and customer returns | `INVENTORY-GAP-ANALYSIS.md`, `PURCHASE-INVENTORY.md` | Not started | Location balances conserve company stock; returns reconcile physical/history rules. |
+| 1 | INV-02A: reservations, delivery operations, partial sale delivery and backorders | `INVENTORY-GAP-ANALYSIS.md`, `SALES-INVENTORY-PARTIAL-FULFILLMENT-PLAN.md`, `ODOO-PARITY-MATRIX.md` | Backend verified; Vue/E2E pending | Reservation/retry/concurrency, partial picking/backorder and browser evidence pass. |
+| 2 | SA-02A: per-line progress and multiple/partial invoice allocations | `SALES-GAP-ANALYSIS.md`, `CRM-SALES.md`, `ACCOUNTING-INTEGRATION.md` | Backend verified; Vue/E2E pending | Two delivered batches create exactly two balanced invoices without excess or duplicate allocation, including browser evidence. |
+| 3 | Transfers and customer returns | `INVENTORY-GAP-ANALYSIS.md`, `PURCHASE-INVENTORY.md` | Backend verified; Vue/E2E pending | Location balances conserve company stock; return approval, damage/restock decision, and history reconcile through the user interface. |
 | 4 | Credit notes, refunds and payment reversals | `ACCOUNTING-INTEGRATION.md`, parity rows FI-06/FI-07 | Not started | Immutable reversal/credit workflows reconcile to stock returns and journals. |
 | 5 | Pricing, discounts, product variants/UoM and tax policy | `CONTACTS-PRODUCTS.md`, `CRM-SALES.md`, parity CP-06–08/FI-08 | Not started | Decimal pricing rules, snapshots and backend authorization pass. |
 | 6 | Accounting depth: manual/opening entries, reconciliation, valuation and localization | `ACCOUNTING-INTEGRATION.md`, parity FN-02–04/IN-06 | Not started | Approved accounting policy, reconciliation and traceable valuation acceptance examples pass. |
@@ -38,7 +38,8 @@ change.
 
 ## Next action
 
-Continue milestone 1 only. Its first task is to repair/recreate the disposable
-`test_kerp` test database left incomplete by an interrupted test runner, add
-focused reservation tests, and prove the reservation API before adding any
-partial-delivery/backorder or Sales invoice code.
+Finish the Vue workflow and browser evidence for milestones 1--3 before starting
+credit notes, refunds, or unrelated ERP modules. The focused Django verification
+suite currently covers deliveries, invoices, purchase inventory, transfers, and
+customer returns; legacy migration-history tests must use a freshly recreated
+test database and must not be reused with `--keepdb`.

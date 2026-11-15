@@ -93,7 +93,7 @@ A portable spreadsheet copy is [ODOO-PARITY-MATRIX.csv](ODOO-PARITY-MATRIX.csv).
 | --- | --- | --- | --- | --- | --- | --- |
 | IN-01 | Stock movement ledger and on-hand balance | Implemented | [M6], [T12] | Search/type/product/order/date filters trace immutable movements; retry-safe adjustments and linked reversals preserve stock history. Signed company balances are retained; movements now carry source/destination location links (INV-01). | P1 | S4 |
 | IN-02 | No-negative-stock and concurrent deliveries | Implemented | [B1], [B6], [T5] | Current full-delivery rule is protected by a company lock; it is KERP's policy, not universal Odoo configuration parity. | P1 | S4 |
-| IN-03 | Warehouses, locations, transfers, reservations | Partial | [M13], [B18], [U10], [T15] | INV-01 adds company warehouses, validated location hierarchies and in-place historical movement endpoints. Existing APIs use the default warehouse; transfers, reservations and partial sales deliveries remain outside this milestone. A reviewed plan is not implementation evidence. | P1 | S4 |
+| IN-03 | Warehouses, locations, transfers, reservations | Partial | [M13], [B18], [U10], [T15] | Company-scoped reservation, partial delivery/backorder, and internal transfer APIs now write auditable stock records. Customer return approval can restock or retain damaged goods outside stock. Vue workflow and browser evidence remain pending. | P1 | S4 |
 | IN-04 | Lots, serials, expiry, and scanning | Missing | [M2], [M6] | Add traceable receipt/delivery quantities, unique serial rules, and barcode workflows. | P2 | S8 |
 | IN-05 | Replenishment rules | Partial | [M2], [B10] | A threshold and dashboard count exist; add min/max, routes, and suggested/automatic orders. | P2 | S9 |
 | IN-06 | Inventory costing and valuation | Missing | [M6], [M2] | A product cost is not valuation; add cost layers, accounting links, and reconciliation. | P1 | S4 |
@@ -102,7 +102,7 @@ A portable spreadsheet copy is [ODOO-PARITY-MATRIX.csv](ODOO-PARITY-MATRIX.csv).
 
 | ID | Capability | Status | Repository evidence | Current boundary / next acceptance condition | Priority | Odoo reference |
 | --- | --- | --- | --- | --- | --- | --- |
-| FI-01 | Customer invoices and vendor bills | Partial | [M5], [B8] | Order-based creation works; add standalone documents and multiple invoices per order. A reviewed plan exists; multiple/partial invoices have no implementation evidence. | P1 | S10 |
+| FI-01 | Customer invoices and vendor bills | Partial | [M5], [B8] | Order-based creation supports delivered partial allocations and immutable invoice-line snapshots. Standalone documents and Vue/browser workflow evidence remain pending. | P1 | S10 |
 | FI-02 | Issuing the invoice currently displayed | Implemented | [U4], [U6], [T6] | Dirty invoices/bills block issue until Save or Discard; saved dates, due dates and notes are retained. | P1 | S10 |
 | FI-03 | Manual partial/full payment recording | Implemented | [B11], [T4] | Bank/cash records and remaining-balance checks work; no external payment is executed. | P1 | S10 |
 | FI-04 | Payment retry without duplicate financial rows | Implemented | [B11], [T5] | UUID retries preserve one payment even concurrently; completion-activity correctness is verified separately in FI-05. | P1 | S10 |

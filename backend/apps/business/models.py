@@ -305,6 +305,7 @@ class StockMovement(CompanyRecord):
 class StockTransfer(CompanyRecord):
     number = models.CharField(max_length=30)
     request_id = models.UUIDField(unique=True)
+    payload_digest = models.CharField(max_length=64)
     source_location = models.ForeignKey(StockLocation, on_delete=models.PROTECT, related_name="transfer_sources")
     destination_location = models.ForeignKey(StockLocation, on_delete=models.PROTECT, related_name="transfer_destinations")
     status = models.CharField(max_length=12, default="draft", choices=[("draft", "Draft"), ("done", "Done"), ("cancelled", "Cancelled")])
@@ -327,6 +328,7 @@ class StockTransferLine(models.Model):
 class CustomerReturn(CompanyRecord):
     number = models.CharField(max_length=30)
     request_id = models.UUIDField(unique=True)
+    payload_digest = models.CharField(max_length=64)
     order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="customer_returns")
     status = models.CharField(max_length=12, default="requested", choices=[("requested", "Requested"), ("approved", "Approved"), ("rejected", "Rejected")])
     restockable = models.BooleanField(default=True)
@@ -345,7 +347,7 @@ class CustomerReturnLine(models.Model):
     movement = models.OneToOneField(StockMovement, null=True, blank=True, on_delete=models.PROTECT, related_name="customer_return_receipt")
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=("customer_return", "order_line"), name="business_customer_return_line")]
+        constraints = [models.UniqueConstraint(fields=("customer_return", "delivery_movement"), name="business_customer_return_delivery")]
 
 
 class Invoice(CompanyRecord):
