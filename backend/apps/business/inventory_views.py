@@ -7,8 +7,8 @@ from django.utils import timezone
 
 from apps.companies.access import membership_for
 from apps.core.api import APIError, api, json_body
-from .inventory import adjustment, correct_movement, create_delivery, operation_data, receive_purchase, release_reservations, reserve_sale, validate_delivery
-from .models import Order, Product, PurchaseReceipt, StockLocation, StockMovement, StockOperation, StockReservation
+from .inventory import adjustment, correct_movement, create_customer_return, create_delivery, create_transfer, decide_customer_return, operation_data, receive_purchase, release_reservations, reserve_sale, validate_delivery, validate_transfer
+from .models import CustomerReturn, Order, Product, PurchaseReceipt, StockLocation, StockMovement, StockOperation, StockReservation, StockTransfer
 from .services import ZERO, date_value, scoped, stock_for, write_access
 from .views import order_data, page
 
@@ -116,6 +116,58 @@ def operation_action(request, company_id, record_id):
         operation, created, backorder = validate_delivery(operation, request.user, data)
         return JsonResponse({"operation": operation_data(operation), "backorder": operation_data(backorder) if backorder else None,
                              "replayed": not created})
+
+
+def transfer_data(item):
+    return {"id": item.pk, "number": item.number, "status": item.status, "source_location_id": item.source_location_id,
+            "destination_location_id": item.destination_location_id, "request_id": item.request_id,
+            "lines": [{"id": line.pk, "product_id": line.product_id, "quantity": line.quantity, "done_quantity": line.done_quantity} for line in item.lines.all()]}
+
+
+@api(["GET", "POST"])
+def transfers(request, company_id):
+    membership_for(request.user, company_id)
+    if request.method == "GET": return page(request, StockTransfer.objects.filter(company_id=company_id).prefetch_related("lines"), transfer_data)
+    with transaction.atomic():
+        write_access(request.user, company_id)
+        item, created = create_transfer(company_id, request.user, json_body(request, {"source_location_id", "destination_location_id", "lines", "request_id"}))
+        return JsonResponse({"transfer": transfer_data(item), "replayed": not created}, status=201 if created else 200)
+
+
+@api(["POST"])
+def transfer_action(request, company_id, record_id):
+    with transaction.atomic():
+        write_access(request.user, company_id); item = scoped(StockTransfer, company_id, record_id)
+        data = json_body(request, {"action", "lines"})
+        if data.get("action") != "validate": raise APIError("Choose validate.")
+        item, created = validate_transfer(item, request.user, data)
+        return JsonResponse({"transfer": transfer_data(item), "replayed": not created})
+
+
+def customer_return_data(item):
+    return {"id": item.pk, "number": item.number, "order_id": item.order_id, "status": item.status, "reason": item.reason,
+            "restockable": item.restockable, "lines": [{"id": line.pk, "order_line_id": line.order_line_id,
+            "delivery_movement_id": line.delivery_movement_id, "quantity": line.quantity, "movement_id": line.movement_id} for line in item.lines.all()]}
+
+
+@api(["GET", "POST"])
+def customer_returns(request, company_id, record_id):
+    membership_for(request.user, company_id); order = scoped(Order, company_id, record_id)
+    if request.method == "GET": return page(request, CustomerReturn.objects.filter(company_id=company_id, order=order).prefetch_related("lines"), customer_return_data)
+    with transaction.atomic():
+        write_access(request.user, company_id)
+        item, created = create_customer_return(order, request.user, json_body(request, {"request_id", "reason", "restockable", "lines"}))
+        return JsonResponse({"return": customer_return_data(item), "replayed": not created}, status=201 if created else 200)
+
+
+@api(["POST"])
+def customer_return_action(request, company_id, record_id):
+    with transaction.atomic():
+        write_access(request.user, company_id); item = scoped(CustomerReturn, company_id, record_id)
+        data = json_body(request, {"action"})
+        if data.get("action") not in ("approve", "reject"): raise APIError("Choose approve or reject.")
+        item, changed = decide_customer_return(item, request.user, data["action"] == "approve")
+        return JsonResponse({"return": customer_return_data(item), "replayed": not changed})
 
 
 @api(["GET", "POST"])
