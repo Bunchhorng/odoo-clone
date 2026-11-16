@@ -47,7 +47,7 @@ class SystemAccessSeedTests(TestCase):
 
     def test_new_company_seed_contains_admin_and_member_groups_and_rights(self):
         groups = seed_company(self.company)
-        self.assertEqual(set(groups), {"admin", "member"})
+        self.assertEqual(set(groups), {"admin", "member", "sales-user", "purchase-user", "inventory-user", "accountant", "hr-officer", "project-manager", "helpdesk-agent"})
         self.assertTrue(groups["admin"].is_system)
         self.assertTrue(AppAccessRight.objects.filter(group=groups["admin"], app_key="sales", can_approve=True).exists())
         self.assertTrue(AppAccessRight.objects.filter(group=groups["member"], app_key="timesheets", can_create=True).exists())
@@ -90,3 +90,10 @@ class SystemAccessSeedTests(TestCase):
         other = Company.objects.create(name="Other", slug="other")
         seed_company(self.company)
         self.assertFalse(CompanyAccessGroup.objects.filter(company=other).exists())
+
+    def test_preset_groups_are_idempotent_and_have_no_members(self):
+        groups = seed_company(self.company)
+        preset_keys = set(groups) - {"admin", "member"}
+        self.assertEqual(CompanyAccessGroupMembership.objects.filter(group__system_key__in=preset_keys).count(), 0)
+        seed_company(self.company)
+        self.assertEqual(CompanyAccessGroup.objects.filter(company=self.company, system_key__in=preset_keys).count(), len(preset_keys))
