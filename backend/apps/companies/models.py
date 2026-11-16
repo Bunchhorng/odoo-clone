@@ -43,11 +43,16 @@ class CompanyAccessGroup(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="access_groups")
     name = models.CharField(max_length=100)
     code = models.SlugField(max_length=64)
+    # Stable ID for built-in groups. Names and codes can be renamed safely.
+    system_key = models.SlugField(max_length=64, null=True, blank=True)
     is_system = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=("company", "code"), name="companies_access_group_code")]
+        constraints = [
+            models.UniqueConstraint(fields=("company", "code"), name="companies_access_group_code"),
+            models.UniqueConstraint(fields=("company", "system_key"), name="companies_access_group_system_key"),
+        ]
         ordering = ("name", "id")
 
 
