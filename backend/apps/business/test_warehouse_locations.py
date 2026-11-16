@@ -230,6 +230,14 @@ class LegacyLocationMigrationTests(TransactionTestCase):
     """Exercise real schema transitions against the disposable MySQL test DB."""
     reset_sequences = True
 
+    def tearDown(self):
+        # These tests intentionally rewind the schema. Restore every migration
+        # before TransactionTestCase flushes the database, otherwise Django
+        # introspection sees models whose tables were deliberately removed.
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())
+        super().tearDown()
+
     def test_failed_backfill_rolls_back_data_and_can_be_retried(self):
         before = [("business", "0006_service_operations")]
         schema = [("business", "0007_warehouse_location_schema")]

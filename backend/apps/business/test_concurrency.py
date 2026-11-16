@@ -20,14 +20,15 @@ class BusinessConcurrencyTests(TransactionTestCase):
         CompanyMembership.objects.create(company=self.company, user=self.user, role="owner")
         self.contact = Contact.objects.create(company=self.company, name="Customer")
         self.product = Product.objects.create(company=self.company, name="Product", sku="PARALLEL", sale_price="20")
+        self.service_product = Product.objects.create(company=self.company, name="Service", sku="PARALLEL-SERVICE", kind="service", sale_price="20")
         self.clients = [Client(), Client()]
         for client in self.clients:
             client.force_login(self.user)
         self.base = f"/api/v1/companies/{self.company.pk}/erp/"
 
-    def order(self, quantity):
+    def order(self, quantity, *, service=False):
         order = save_order(self.company.pk, {"kind": "sale", "contact_id": self.contact.pk,
-                           "lines": [{"product_id": self.product.pk, "quantity": quantity}]})
+                           "lines": [{"product_id": self.service_product.pk if service else self.product.pk, "quantity": quantity}]})
         order.status = "confirmed"
         order.save(update_fields=["status"])
         return order
@@ -57,7 +58,7 @@ class BusinessConcurrencyTests(TransactionTestCase):
 
     @skipUnlessDBFeature("has_select_for_update")
     def test_concurrent_payments_cannot_exceed_balance(self):
-        invoice = invoice_order(self.order("2"))
+        invoice = invoice_order(self.order("2", service=True))
         invoice.status = "issued"
         invoice.save(update_fields=["status"])
         endpoint = f"invoices/{invoice.pk}/payments/"
@@ -69,7 +70,7 @@ class BusinessConcurrencyTests(TransactionTestCase):
 
     @skipUnlessDBFeature("has_select_for_update")
     def test_concurrent_retry_records_one_payment(self):
-        invoice = invoice_order(self.order("2"))
+        invoice = invoice_order(self.order("2", service=True))
         invoice.status = "issued"
         invoice.save(update_fields=["status"])
         endpoint = f"invoices/{invoice.pk}/payments/"
@@ -106,7 +107,7 @@ class BusinessConcurrencyTests(TransactionTestCase):
 
     @skipUnlessDBFeature("has_select_for_update")
     def test_concurrent_invoice_creation_logs_one_completion(self):
-        order = self.order("1")
+        order = self.order("1", service=True)
         body = {"action": "invoice", "expected_version": order.version}
         self.assertEqual(self.run_parallel([f"orders/{order.pk}/actions/"] * 2, [body, body]), [200, 200])
         self.assertEqual(Invoice.objects.filter(order=order).count(), 1)
@@ -170,7 +171,7 @@ class BusinessConcurrencyTests(TransactionTestCase):
 
     @skipUnlessDBFeature("has_select_for_update")
     def test_concurrent_invoice_issue_creates_one_balanced_posting(self):
-        invoice = invoice_order(self.order("2"))
+        invoice = invoice_order(self.order("2", service=True))
         body = {"action": "issue", "expected_version": invoice.version}
         self.assertEqual(self.run_parallel([f"invoices/{invoice.pk}/actions/"] * 2, [body, body]), [200, 200])
         self.assertEqual(JournalEntry.objects.filter(invoice=invoice).count(), 1)
@@ -182,7 +183,7 @@ class BusinessConcurrencyTests(TransactionTestCase):
 
     @skipUnlessDBFeature("has_select_for_update")
     def test_concurrent_historical_import_posts_each_source_once(self):
-        invoice = invoice_order(self.order("2"))
+        invoice = invoice_order(self.order("2", service=True))
         invoice.status = "issued"
         invoice.save(update_fields=["status"])
         self.assertEqual(self.run_parallel(["accounting/sync/"] * 2, [{}, {}]), [200, 200])
