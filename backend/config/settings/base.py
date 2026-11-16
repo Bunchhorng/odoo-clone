@@ -11,6 +11,9 @@ if not SECRET_KEY or SECRET_KEY.startswith("REPLACE_WITH_"):
     raise ImproperlyConfigured("Set a random DJANGO_SECRET_KEY in the root .env file.")
 
 DEBUG = False
+PERMISSION_MODE = os.environ.get("PERMISSION_MODE", "off")
+if PERMISSION_MODE not in {"off", "log", "enforce"}:
+    raise ImproperlyConfigured("PERMISSION_MODE must be off, log, or enforce.")
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")

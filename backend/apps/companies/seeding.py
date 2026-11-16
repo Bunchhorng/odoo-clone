@@ -46,7 +46,7 @@ def seed_company_records(company, group_model, right_model, rule_model):
 
 def sync_membership_records(membership, groups, group_membership_model):
     """Replace only this membership's Admin/Member system memberships."""
-    system_groups = list(groups.values())
+    system_groups = [groups[key] for key in ("admin", "member")]
     group_membership_model.objects.filter(user_id=membership.user_id, group__in=system_groups).delete()
     target_key = {"admin": "admin", "member": "member"}.get(membership.role)
     if target_key:

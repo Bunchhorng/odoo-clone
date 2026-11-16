@@ -81,6 +81,27 @@ SYSTEM_GROUPS = (
         # future record-rule adapter; messages themselves have no user FK.
         SeedRight("helpdesk", READ_CREATE_WRITE, "own", "business.ticketmessage"),
     )),
+    SeedGroup("sales-user", "Sales User", "system-sales-user", (
+        SeedRight("crm", READ_CREATE_WRITE), SeedRight("sales", READ_CREATE_WRITE),
+        SeedRight("contacts", READ_CREATE_WRITE),
+    )),
+    SeedGroup("purchase-user", "Purchase User", "system-purchase-user", (
+        SeedRight("purchase", READ_CREATE_WRITE), SeedRight("contacts", READ_ONLY),
+        SeedRight("products", READ_ONLY), SeedRight("product-categories", READ_ONLY),
+    )),
+    SeedGroup("inventory-user", "Inventory User", "system-inventory-user", (
+        SeedRight("inventory", frozenset({"read", "create", "write", "delete"})),
+        SeedRight("products", READ_CREATE_WRITE), SeedRight("product-categories", READ_CREATE_WRITE),
+    )),
+    SeedGroup("accountant", "Accountant", "system-accountant", (
+        SeedRight("accounting", READ_CREATE_WRITE),
+        SeedRight("invoicing", frozenset({"read", "create", "write", "approve"})),
+    )),
+    SeedGroup("hr-officer", "HR Officer", "system-hr-officer", (SeedRight("employees", READ_CREATE_WRITE),)),
+    SeedGroup("project-manager", "Project Manager", "system-project-manager", (
+        SeedRight("projects", READ_CREATE_WRITE), SeedRight("tasks", READ_CREATE_WRITE),
+    )),
+    SeedGroup("helpdesk-agent", "Helpdesk Agent", "system-helpdesk-agent", (SeedRight("helpdesk", READ_CREATE_WRITE),)),
 )
 
 
