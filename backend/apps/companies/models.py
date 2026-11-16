@@ -44,6 +44,7 @@ class CompanyAccessGroup(models.Model):
     name = models.CharField(max_length=100)
     code = models.SlugField(max_length=64)
     is_system = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=("company", "code"), name="companies_access_group_code")]
@@ -102,8 +103,18 @@ class AppRecordRule(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="app_record_rules")
     group = models.ForeignKey(CompanyAccessGroup, on_delete=models.CASCADE, related_name="record_rules")
     app_key = models.SlugField(max_length=64)
-    model_key = models.SlugField(max_length=100)
+    # Dotted identifiers (for example ``business.helpdeskticket``) keep the
+    # rule definition independent from Python imports while remaining stable.
+    model_key = models.CharField(max_length=100)
     scope = models.CharField(max_length=20, choices=Scope.choices)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=("company", "group", "app_key", "model_key", "scope"), name="companies_app_record_rule")]
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        from .permissions import record_scope_supported
+        if self.group_id and self.company_id and self.group.company_id != self.company_id:
+            raise ValidationError("The access group must belong to the same company.")
+        if not record_scope_supported(self.app_key, self.model_key, self.scope):
+            raise ValidationError({"scope": f"{self.scope} is not supported for {self.model_key}; use all_company."})

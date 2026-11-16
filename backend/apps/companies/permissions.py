@@ -18,9 +18,21 @@ IMPLIED_READ_ACCESS = {
     "crm": frozenset({"contacts"}),
 }
 
+# Only models with a real owner/requester or assignee can use narrowed scopes.
+RECORD_SCOPE_CAPABILITIES = {
+    ("timesheets", "business.timesheetentry"): frozenset({"all_company", "own"}),
+    ("helpdesk", "business.helpdeskticket"): frozenset({"all_company", "own", "assigned"}),
+    ("helpdesk", "business.ticketmessage"): frozenset({"all_company", "own"}),
+    ("projects", "business.task"): frozenset({"all_company", "assigned"}),
+}
+
 
 class NoActiveMembership(PermissionError):
     pass
+
+
+def record_scope_supported(app_key: str, model_key: str, scope: str) -> bool:
+    return scope in RECORD_SCOPE_CAPABILITIES.get((app_key, model_key), frozenset({"all_company"}))
 
 
 @dataclass(frozen=True)
@@ -58,7 +70,7 @@ def resolve_effective_access(user, company_id: int) -> EffectiveAccess:
         )
 
     group_ids = CompanyAccessGroupMembership.objects.filter(
-        user=user, group__company_id=company_id,
+        user=user, group__company_id=company_id, group__is_active=True,
     ).values_list("group_id", flat=True)
     permissions: dict[str, set[str]] = {}
     for right in AppAccessRight.objects.filter(company_id=company_id, group_id__in=group_ids):
