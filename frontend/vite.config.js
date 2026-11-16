@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [vue(), tailwindcss()],
   server: {
     host: '0.0.0.0',
-    port: 5173,
+    port: 5175,
     strictPort: true,
     headers: { 'Referrer-Policy': 'same-origin' },
     watch: { usePolling: process.env.CHOKIDAR_USEPOLLING === 'true' },

@@ -178,9 +178,9 @@ and implemented-capability traceability are in [E2E-PARITY.md](E2E-PARITY.md).
 
 ## Local review
 
-The stack is running with Vue on port **5173** and Django on **8001** in this
+The stack is running with Vue on port **5175** and Django on **8001** in this
 workspace's existing `.env`. Fresh clones use the example ports unless changed.
-Sign in at <http://localhost:5173/login> and select **KERP Demo** to explore the
+Sign in at <http://localhost:5175/login> and select **KERP Demo** to explore the
 separate sample company. Existing company records and account passwords were preserved.
 
 This verifies the implemented core. Full Odoo parity is not claimed; see

@@ -3,7 +3,7 @@
 ## Environment and commands
 
 Windows, Node 24, headless Microsoft Edge, and the running Compose stack with
-Django 5.2/MySQL 8.4. Frontend: `http://localhost:5173`; API traffic uses the existing
+Django 5.2/MySQL 8.4. Frontend: `http://localhost:5175`; API traffic uses the existing
 same-origin Vite proxy. Test records use random identifiers and are cleaned up.
 
 ```powershell

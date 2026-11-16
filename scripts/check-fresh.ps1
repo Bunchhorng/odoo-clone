@@ -38,8 +38,8 @@ try {
         $configuration = $configuration.Replace($placeholder, (New-TestSecret))
     }
     $configuration = $configuration.Replace('COMPOSE_PROJECT_NAME=kerp', "COMPOSE_PROJECT_NAME=$testProject")
-    $configuration = $configuration.Replace('BACKEND_PORT=8000', "BACKEND_PORT=$backendPort").Replace('FRONTEND_PORT=5173', "FRONTEND_PORT=$frontendPort")
-    $configuration = $configuration.Replace('http://localhost:5173,http://127.0.0.1:5173', "http://localhost:$frontendPort,http://127.0.0.1:$frontendPort")
+    $configuration = $configuration.Replace('BACKEND_PORT=8000', "BACKEND_PORT=$backendPort").Replace('FRONTEND_PORT=5175', "FRONTEND_PORT=$frontendPort")
+    $configuration = $configuration.Replace('http://localhost:5175,http://127.0.0.1:5175', "http://localhost:$frontendPort,http://127.0.0.1:$frontendPort")
     [IO.File]::WriteAllText($testConfiguration, $configuration)
     $cleanupAllowed = $true
     Write-Host "Testing disposable Docker project $testProject with new volumes."
@@ -50,7 +50,7 @@ try {
     Invoke-TestCompose exec -T backend python manage.py makemigrations --check --dry-run
     Invoke-TestCompose exec -T backend python manage.py test --noinput
     Invoke-TestCompose exec -T frontend npm run build
-    $healthProbe = "fetch('http://127.0.0.1:5173/api/v1/health/').then(async response => { const data = await response.json(); if (!response.ok || data.database !== 'connected') process.exit(1); console.log('Fresh proxy/database health passed.') }).catch(() => process.exit(1))"
+    $healthProbe = "fetch('http://127.0.0.1:5175/api/v1/health/').then(async response => { const data = await response.json(); if (!response.ok || data.database !== 'connected') process.exit(1); console.log('Fresh proxy/database health passed.') }).catch(() => process.exit(1))"
     Invoke-TestCompose exec -T frontend node -e $healthProbe
 } finally {
     try {

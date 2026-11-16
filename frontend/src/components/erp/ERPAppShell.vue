@@ -28,6 +28,7 @@ const signingOut = ref(false)
 const switchSearch = ref('')
 const filteredApps = computed(() => apps.value.filter(app => `${app.name} ${app.description}`.toLowerCase().includes(switchSearch.value.trim().toLowerCase())))
 const initials = computed(() => (auth.user?.name || auth.user?.email || 'K').slice(0, 1).toUpperCase())
+const currentYear = new Date().getFullYear()
 let interval: ReturnType<typeof setInterval>
 function checkWhenVisible() { if (document.visibilityState === 'visible') health.check() }
 onMounted(() => {
@@ -95,6 +96,10 @@ function activeLink(path: string) {
     </nav>
     <div v-if="error" class="shell-feedback"><p class="notice error" role="alert">{{ error }}</p></div>
     <main id="main-content" tabindex="-1"><slot /></main>
-    <footer class="site-footer"><span><strong>KERP</strong> · Your business, connected</span><RouterLink to="/setup">Workspace guide</RouterLink></footer>
+    <footer class="site-footer">
+      <div class="footer-brand"><span class="footer-mark" aria-hidden="true">k</span><div><strong>KERP</strong><span>One workspace for every team.</span></div></div>
+      <nav class="footer-links" aria-label="Footer navigation"><RouterLink v-if="auth.user" to="/">Applications</RouterLink><RouterLink to="/setup">Workspace guide</RouterLink><RouterLink v-if="auth.user" to="/account">Account</RouterLink><RouterLink v-else to="/login">Sign in</RouterLink></nav>
+      <div class="footer-meta"><span>© {{ currentYear }} KERP</span><span v-if="auth.activeCompany">{{ auth.activeCompany.name }}</span></div>
+    </footer>
   </div>
 </template>

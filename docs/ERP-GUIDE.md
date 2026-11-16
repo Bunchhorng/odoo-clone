@@ -12,7 +12,7 @@ From the project root with Docker Desktop running:
 powershell -ExecutionPolicy Bypass -File scripts/start.ps1
 ```
 
-Open <http://localhost:5173/login>. Use your existing account. If you need the
+Open <http://localhost:5175/login>. Use your existing account. If you need the
 first administrator, run `docker compose exec backend python manage.py createsuperuser`.
 See [SETUP.md](../SETUP.md) for ports and troubleshooting.
 

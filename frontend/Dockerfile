@@ -3,5 +3,5 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-EXPOSE 5173
+EXPOSE 5175
 CMD ["sh", "-c", "npm ci --no-audit --no-fund && exec npm run dev"]

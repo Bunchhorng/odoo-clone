@@ -57,12 +57,13 @@ describe('launcher', () => {
     expect((input.element as HTMLInputElement).value).toBe('')
     expect(wrapper.findAll('.launcher-tile')).toHaveLength(2)
   })
-  it('groups permitted applications by their business area', async () => {
+  it('presents permitted applications in the visual app gallery', async () => {
     session()
     const wrapper = await render(ERPAppLauncher, { props: { apps: [...apps, { name: 'Accounts', path: '/accounts', description: 'Ledger', icon: 'chart', color: '#714b83', category: 'Finance', requiresCompany: true }] } })
-    expect(wrapper.findAll('.launcher-category')).toHaveLength(2)
-    expect(wrapper.text()).toContain('Sales')
-    expect(wrapper.text()).toContain('Finance')
+    expect(wrapper.findAll('.launcher-grid > li')).toHaveLength(3)
+    expect(wrapper.find('a[href="/sales"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/accounts"]').exists()).toBe(true)
+    expect(wrapper.find('.launcher-category').exists()).toBe(false)
   })
   it('handles loading, errors, retry and the absence of a company without fake actions', async () => {
     const auth = session()

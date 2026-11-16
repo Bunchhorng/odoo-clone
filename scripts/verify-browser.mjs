@@ -19,7 +19,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const local = path.join(root, '.local')
 await mkdir(local, { recursive: true })
 const configuration = await readFile(path.join(root, '.env'), 'utf8')
-const frontend = `http://localhost:${configuration.match(/^FRONTEND_PORT=(\d+)/m)?.[1] || 5173}`
+const frontend = `http://localhost:${configuration.match(/^FRONTEND_PORT=(\d+)/m)?.[1] || 5175}`
 const runId = randomBytes(8).toString('hex')
 const owner = `browser-owner-${runId}@example.test`
 const teammate = `browser-member-${runId}@example.test`

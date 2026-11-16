@@ -32,7 +32,7 @@ try {
     docker compose up -d --build --wait --wait-timeout 300
     if ($LASTEXITCODE -ne 0) { throw 'Services did not become healthy. Run docker compose logs --tail=80 and read SETUP.md.' }
     docker compose ps
-    $frontendPort = '5173'
+    $frontendPort = '5175'
     foreach ($line in (Get-Content -LiteralPath '.env')) {
         if ($line -match '^FRONTEND_PORT=(\d+)\s*$') { $frontendPort = $Matches[1] }
     }

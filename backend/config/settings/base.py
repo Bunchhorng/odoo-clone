@@ -96,7 +96,7 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Server-owned origin prevents reset-link host-header poisoning.
-FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:5173").rstrip("/")
+FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:5175").rstrip("/")
 _frontend = urlsplit(FRONTEND_ORIGIN)
 if (_frontend.scheme not in ("http", "https") or not _frontend.netloc or
         _frontend.username or _frontend.password or _frontend.path or _frontend.query or _frontend.fragment):

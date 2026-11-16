@@ -41,7 +41,7 @@ The mailer shares the backend's source/configuration and has no published port.
 It starts after the backend is healthy. It has a restart policy, but no separate
 worker heartbeat/health endpoint; Running is not proof of SMTP delivery.
 
-Open <http://localhost:5173/login>, or the frontend port configured in `.env`.
+Open <http://localhost:5175/login>, or the frontend port configured in `.env`.
 This workspace's backend uses port 8001; fresh examples default to 8000.
 
 For the first account only:
