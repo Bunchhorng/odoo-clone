@@ -45,6 +45,13 @@ class PartialInvoiceTests(TestCase):
         self.assertEqual((Invoice.objects.count(), InvoiceLine.objects.count(), second["total"]), (2, 2, "42.80"))
         self.call("post", f"orders/{order['id']}/invoices/", {"request_id": str(uuid4()), "lines": [{"line_id": order["lines"][0]["id"], "quantity": "1"}]}, 409)
 
+    def test_undelivered_goods_cannot_be_invoiced(self):
+        order = self.order()
+        self.call("post", f"orders/{order['id']}/invoices/", {
+            "request_id": str(uuid4()),
+            "lines": [{"line_id": order["lines"][0]["id"], "quantity": "1"}],
+        }, 409)
+
     def test_invoice_request_retry_returns_one_document(self):
         order = self.order(); self.deliver(order, "10"); request_id = str(uuid4())
         body = {"request_id": request_id, "lines": [{"line_id": order["lines"][0]["id"], "quantity": "10"}]}
