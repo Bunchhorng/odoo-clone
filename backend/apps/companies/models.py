@@ -36,3 +36,74 @@ class CompanyMembership(models.Model):
 
     def __str__(self):
         return f"{self.user} at {self.company}"
+
+
+class CompanyAccessGroup(models.Model):
+    """Company-scoped access group, inspired by ERP role groups."""
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="access_groups")
+    name = models.CharField(max_length=100)
+    code = models.SlugField(max_length=64)
+    is_system = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=("company", "code"), name="companies_access_group_code")]
+        ordering = ("name", "id")
+
+
+class CompanyAccessGroupMembership(models.Model):
+    group = models.ForeignKey(CompanyAccessGroup, on_delete=models.CASCADE, related_name="memberships")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="company_access_groups")
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=("group", "user"), name="companies_access_group_member")]
+
+
+class AppAccessRight(models.Model):
+    """Additive CRUD/approve grants for one application group."""
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="app_access_rights")
+    group = models.ForeignKey(CompanyAccessGroup, on_delete=models.CASCADE, related_name="app_access_rights")
+    app_key = models.SlugField(max_length=64)
+    can_read = models.BooleanField(default=False)
+    can_create = models.BooleanField(default=False)
+    can_write = models.BooleanField(default=False)
+    can_delete = models.BooleanField(default=False)
+    can_approve = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=("company", "group", "app_key"), name="companies_app_access_right")]
+
+    def clean(self):
+        if self.group_id and self.company_id and self.group.company_id != self.company_id:
+            from django.core.exceptions import ValidationError
+            raise ValidationError("The access group must belong to the same company.")
+
+
+class UserAppAccessOverride(models.Model):
+    """Tri-state user override. False revokes and always wins over group grants."""
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="user_app_access_overrides")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="app_access_overrides")
+    app_key = models.SlugField(max_length=64)
+    can_read = models.BooleanField(null=True, blank=True)
+    can_create = models.BooleanField(null=True, blank=True)
+    can_write = models.BooleanField(null=True, blank=True)
+    can_delete = models.BooleanField(null=True, blank=True)
+    can_approve = models.BooleanField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=("company", "user", "app_key"), name="companies_user_app_override")]
+
+
+class AppRecordRule(models.Model):
+    class Scope(models.TextChoices):
+        ALL_COMPANY = "all_company", "All company records"
+        OWN = "own", "Own records"
+        ASSIGNED = "assigned", "Assigned records"
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="app_record_rules")
+    group = models.ForeignKey(CompanyAccessGroup, on_delete=models.CASCADE, related_name="record_rules")
+    app_key = models.SlugField(max_length=64)
+    model_key = models.SlugField(max_length=100)
+    scope = models.CharField(max_length=20, choices=Scope.choices)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=("company", "group", "app_key", "model_key", "scope"), name="companies_app_record_rule")]
