@@ -6,6 +6,8 @@ from django.http import JsonResponse
 from django.utils import timezone
 
 from apps.companies.access import membership_for
+from apps.companies.permission_audit import PermissionImpact, permission_enforced
+from apps.companies.permissions import resolve_effective_access
 from apps.core.api import APIError, api, json_body, text_field
 from .catalog import catalog_data, catalog_queryset, definition, filtered_catalog, save_catalog
 from .accounting import active_invoice_entry, post_invoice, reverse_invoice
@@ -132,12 +134,24 @@ def orders(request, company_id):
         queryset = Order.objects.filter(company_id=company_id).select_related("opportunity").annotate(received_total=Sum("movements__quantity"), movement_count=Count("movements"))
         if request.GET.get("opportunity_id"):
             queryset = queryset.filter(opportunity=scoped(Opportunity, company_id, request.GET["opportunity_id"]))
-        if request.GET.get("kind"):
-            queryset = queryset.filter(kind=request.GET["kind"])
+        kind = request.GET.get("kind")
+        if kind:
+            queryset = queryset.filter(kind=kind)
         if request.GET.get("status"):
             queryset = queryset.filter(status=request.GET["status"])
         if request.GET.get("q"):
             queryset = queryset.filter(Q(number__icontains=request.GET["q"][:200]) | Q(contact_name__icontains=request.GET["q"][:200]))
+        if not kind:
+            def order_impact():
+                access = resolve_effective_access(request.user, company_id)
+                visible_kinds = tuple(kind for kind, app_key in (("sale", "sales"), ("purchase", "purchase"))
+                                      if access.allows(app_key, "read"))
+                if len(visible_kinds) == 2:
+                    return None
+                return PermissionImpact("no_app_access", queryset.exclude(kind__in=visible_kinds).count(), visible_kinds)
+            impact = permission_enforced(request, company_id, order_impact)
+            if impact:
+                queryset = queryset.filter(kind__in=impact.value)
         return page(request, queryset, order_data)
     with transaction.atomic():
         write_access(request.user, company_id)
@@ -325,34 +339,85 @@ def workspace_settings(request, company_id):
         return JsonResponse({"currency": item.currency, "currency_locked": Order.objects.filter(company_id=company_id).exists()})
 
 
-@api(["GET"])
-def dashboard(request, company_id):
-    actor = membership_for(request.user, company_id)
+DASHBOARD_RESOURCE_APPS = {
+    "contacts": "contacts", "products": "products", "product-categories": "product-categories",
+    "opportunities": "crm", "invoices": "invoicing", "accounting": "accounting",
+    "timesheets": "timesheets", "helpdesk": "helpdesk", "projects": "projects", "tasks": "projects",
+    "stock": "inventory", "warehouses": "inventory", "locations": "inventory",
+}
+
+
+def dashboard_data(request, company_id, actor, access=None):
+    """Build the legacy payload, or its enforce-mode permission-filtered form."""
     activities = Activity.objects.filter(company_id=company_id)
-    if actor.role == "member":
-        own_entries = TimesheetEntry.objects.filter(company_id=company_id, employee__user=request.user).values("id")
-        activities = activities.filter(~Q(resource="timesheets") | Q(resource="timesheets", record_id__in=own_entries))
     orders = Order.objects.filter(company_id=company_id)
     invoices = Invoice.objects.filter(company_id=company_id)
     opportunities = Opportunity.objects.filter(company_id=company_id, is_active=True)
+    tasks = Task.objects.filter(company_id=company_id, is_active=True)
+    products = Product.objects.filter(company_id=company_id, kind="goods", is_active=True).annotate(stock_quantity=Sum("movements__quantity"))
+    if access is not None:
+        visible_order_kinds = tuple(kind for kind, app_key in (("sale", "sales"), ("purchase", "purchase"))
+                                    if access.allows(app_key, "read"))
+        orders = orders.filter(kind__in=visible_order_kinds)
+        visible_invoice_kinds = []
+        if access.allows("invoicing", "read"):
+            visible_invoice_kinds.append("customer")
+        if access.allows("purchase", "read") or access.allows("accounting", "read"):
+            visible_invoice_kinds.append("vendor")
+        invoices = invoices.filter(kind__in=visible_invoice_kinds)
+        opportunities = opportunities if access.allows("crm", "read") else Opportunity.objects.none()
+        products = products if access.allows("inventory", "read") else Product.objects.none()
+        if not access.allows("projects", "read"):
+            tasks = Task.objects.none()
+        elif actor.role == "member":
+            tasks = tasks.filter(assignee=request.user)
+        visible_resources = [resource for resource, app_key in DASHBOARD_RESOURCE_APPS.items() if access.allows(app_key, "read")]
+        activities = activities.filter(Q(resource__in=visible_resources) |
+                                       Q(resource="orders", record_id__in=orders.values("id")))
+    if actor.role == "member":
+        own_entries = TimesheetEntry.objects.filter(company_id=company_id, employee__user=request.user).values("id")
+        activities = activities.filter(~Q(resource="timesheets") | Q(resource="timesheets", record_id__in=own_entries))
     open_invoices = invoices.filter(status="issued").annotate(paid_amount=Sum("payments__amount"))
     receivable = sum((item.total - (item.paid_amount or 0) for item in open_invoices if item.kind == "customer"), Decimal("0"))
     payable = sum((item.total - (item.paid_amount or 0) for item in open_invoices if item.kind == "vendor"), Decimal("0"))
     sales = orders.filter(kind="sale", status="confirmed").aggregate(value=Sum("total"))["value"] or 0
-    products = Product.objects.filter(company_id=company_id, kind="goods", is_active=True).annotate(stock_quantity=Sum("movements__quantity"))
-    data = {
+    return {
         "currency": currency_for(company_id),
-        "contacts": Contact.objects.filter(company_id=company_id, is_active=True).count(),
-        "products": Product.objects.filter(company_id=company_id, is_active=True).count(),
+        "contacts": Contact.objects.filter(company_id=company_id, is_active=True).count() if access is None or access.allows("contacts", "read") else 0,
+        "products": Product.objects.filter(company_id=company_id, is_active=True).count() if access is None or access.allows("products", "read") else 0,
         "open_opportunities": opportunities.exclude(stage__in=["won", "lost"]).count(),
         "pipeline_value": opportunities.exclude(stage__in=["won", "lost"]).aggregate(value=Sum("expected_revenue"))["value"] or 0,
         "sales_total": sales, "quotations": orders.filter(kind="sale", status="draft").count(),
         "receivable": receivable, "payable": payable,
         "low_stock": sum(1 for product in products if (product.stock_quantity or 0) <= product.reorder_level),
-        "open_tasks": Task.objects.filter(company_id=company_id, is_active=True).exclude(stage="done").count(),
-        "overdue_tasks": Task.objects.filter(company_id=company_id, is_active=True, due_date__lt=timezone.localdate()).exclude(stage="done").count(),
+        "open_tasks": tasks.exclude(stage="done").count(),
+        "overdue_tasks": tasks.filter(due_date__lt=timezone.localdate()).exclude(stage="done").count(),
         "pipeline": list(opportunities.values("stage").annotate(count=Count("id"), value=Sum("expected_revenue")).order_by("stage")),
         "recent_orders": [order_data(item) for item in orders.select_related("opportunity")[:5]],
         "activities": [{"id": item.pk, "summary": item.summary, "actor_email": item.actor_email, "resource": item.resource, "record_id": item.record_id, "created_at": item.created_at} for item in activities[:12]],
     }
-    return JsonResponse(data)
+
+
+@api(["GET"])
+def dashboard(request, company_id):
+    actor = membership_for(request.user, company_id)
+    legacy = dashboard_data(request, company_id, actor)
+
+    def dashboard_impact():
+        restricted = dashboard_data(request, company_id, actor, resolve_effective_access(request.user, company_id))
+        if restricted == legacy:
+            return None
+        def visible_record_keys(payload):
+            return (
+                {("orders", item["id"]) for item in payload["recent_orders"]}
+                | {(item["resource"], item["record_id"]) for item in payload["activities"]}
+            )
+
+        return PermissionImpact(
+            "no_app_access",
+            len(visible_record_keys(legacy) - visible_record_keys(restricted)),
+            restricted,
+        )
+
+    impact = permission_enforced(request, company_id, dashboard_impact)
+    return JsonResponse(impact.value if impact else legacy)
