@@ -25,6 +25,10 @@ def api(methods, *, authenticated=True):
                 elif authenticated and not request.user.is_authenticated:
                     response = JsonResponse({"error": "Please sign in."}, status=401)
                 else:
+                    # Import lazily so core stays independent of the companies app
+                    # during Django startup and migrations.
+                    from apps.companies.permission_audit import audit_request
+                    audit_request(request, view, kwargs)
                     response = view(request, *args, **kwargs)
             except APIError as exc:
                 response = JsonResponse({"error": exc.message}, status=exc.status)
