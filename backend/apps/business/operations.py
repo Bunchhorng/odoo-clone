@@ -245,14 +245,17 @@ def time_action(user, actor, item, data, request=None):
                    "discard": ("draft", "voided")}
     if not isinstance(action, str) or action not in transitions:
         raise APIError("Choose submit, withdraw, approve, reject, void or discard.")
-    self_approval = permission_enforced(request, item.company_id, lambda: (
-        PermissionImpact("self_approval_not_allowed")
-        if action == "approve" and item.employee.user_id == user.pk else None
-    ), action=action)
-    if self_approval:
+    self_review = action in {"approve", "reject", "void"} and item.employee.user_id == user.pk
+    if self_review:
+        permission_enforced(
+            request,
+            item.company_id,
+            lambda: PermissionImpact("self_approval_not_allowed"),
+            action=action,
+        )
         raise APIError(
-            "You cannot approve your own time entry.", 403,
-            headers={"X-Permission-Code": self_approval.reason},
+            "You cannot review your own time entry.", 403,
+            headers={"X-Permission-Code": "self_approval_not_allowed"},
         )
     if action in ("approve", "reject", "void") and actor.role not in MANAGERS:
         raise APIError("Only an owner or administrator can review time.", 403)
