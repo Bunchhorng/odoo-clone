@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from apps.companies.access import membership_for
 from apps.companies.models import Company, CompanyMembership
+from apps.companies.permission_audit import PermissionImpact, permission_enforced
 from apps.core.api import APIError, text_field
 from .models import Contact, Employee, HelpdeskTicket, Project, Task, TicketMessage, TimesheetEntry
 from .services import check_version, date_value, next_number, positive_id, record_activity, scoped
@@ -182,7 +183,7 @@ def time_values(data, item=None):
     return result
 
 
-def save_time(user, company_id, data, actor, item=None):
+def save_time(user, company_id, data, actor, item=None, request=None):
     creating = item is None
     if item:
         own_time(user, actor, item)
@@ -204,6 +205,13 @@ def save_time(user, company_id, data, actor, item=None):
     project = related(Project, company_id, values["project_id"], item.project_id if item else None, optional=False)
     task = related(Task, company_id, values["task_id"], item.task_id if item else None)
     ticket = related(HelpdeskTicket, company_id, values["ticket_id"], item.ticket_id if item else None)
+    task_impact = permission_enforced(request, company_id, lambda: (
+        PermissionImpact("task_not_assigned")
+        if task and actor.role not in MANAGERS and task.assignee_id != user.pk else None
+    ))
+    if task_impact:
+        raise APIError("Choose a task assigned to you.", 403,
+                       headers={"X-Permission-Code": task_impact.reason})
     if task and task.project_id != project.pk:
         raise APIError("The task must belong to the selected project.")
     if ticket:
@@ -228,7 +236,7 @@ def save_time(user, company_id, data, actor, item=None):
     return item, True
 
 
-def time_action(user, actor, item, data):
+def time_action(user, actor, item, data, request=None):
     own_time(user, actor, item)
     check_version(item, data)
     action = data.get("action")
@@ -237,6 +245,15 @@ def time_action(user, actor, item, data):
                    "discard": ("draft", "voided")}
     if not isinstance(action, str) or action not in transitions:
         raise APIError("Choose submit, withdraw, approve, reject, void or discard.")
+    self_approval = permission_enforced(request, item.company_id, lambda: (
+        PermissionImpact("self_approval_not_allowed")
+        if action == "approve" and item.employee.user_id == user.pk else None
+    ), action=action)
+    if self_approval:
+        raise APIError(
+            "You cannot approve your own time entry.", 403,
+            headers={"X-Permission-Code": self_approval.reason},
+        )
     if action in ("approve", "reject", "void") and actor.role not in MANAGERS:
         raise APIError("Only an owner or administrator can review time.", 403)
     previous, status = transitions[action]

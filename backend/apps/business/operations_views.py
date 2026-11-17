@@ -147,7 +147,7 @@ def timesheets(request, company_id):
         return JsonResponse(response)
     with transaction.atomic():
         actor = access(request.user, company_id)
-        item, created = save_time(request.user, company_id, json_body(request, TIME_FIELDS | {"request_id"}), actor)
+        item, created = save_time(request.user, company_id, json_body(request, TIME_FIELDS | {"request_id"}), actor, request=request)
         return JsonResponse(time_data(time_queryset(request.user, company_id, {}).get(pk=item.pk)), status=201 if created else 200)
 
 
@@ -161,7 +161,7 @@ def time_item(request, company_id, record_id):
     with transaction.atomic():
         actor = access(request.user, company_id)
         item, _ = save_time(request.user, company_id, json_body(request, TIME_FIELDS | {"expected_version"}), actor,
-                            scoped(TimesheetEntry, company_id, record_id))
+                            scoped(TimesheetEntry, company_id, record_id), request=request)
         return JsonResponse(time_data(time_queryset(request.user, company_id, {}).get(pk=item.pk)))
 
 
@@ -172,7 +172,7 @@ def time_actions(request, company_id, record_id):
         item = time_queryset(request.user, company_id, {}).filter(pk=record_id).first()
         if item is None:
             raise APIError("Time entry not found.", 404)
-        time_action(request.user, actor, item, json_body(request, {"action", "expected_version", "reason"}))
+        time_action(request.user, actor, item, json_body(request, {"action", "expected_version", "reason"}), request=request)
         return JsonResponse(time_data(item))
 
 
