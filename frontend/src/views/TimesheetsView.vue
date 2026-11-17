@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import { allRecords, erp, today, useWorkspace } from '../composables/erp'
+import { erp, today, useWorkspace } from '../composables/erp'
 import { syncPage, useDirtyForm, usePage } from '../composables/forms'
 import { downloadText } from '../composables/download'
 import UiDialog from '../components/ui/UiDialog.vue'
@@ -17,11 +17,11 @@ const { dirty, markClean } = useDirtyForm(form)
 function params() { return new URLSearchParams({ ...context.value, status: status.value, q: search.value, date_from: dateFrom.value, date_to: dateTo.value }) }
 const { data, error, loading, refresh } = useWorkspace(async id => {
   const query = params(); query.set('page', String(page.value))
-  const [entries, employees, projects, tasks, tickets, ticket] = await Promise.all([
-    erp(id, `timesheets/?${query}`), allRecords(id, 'employees'), allRecords(id, 'projects'), allRecords(id, 'tasks'), allRecords(id, 'helpdesk'),
+  const [entries, ticket] = await Promise.all([
+    erp(id, `timesheets/?${query}`),
     context.value.ticket_id ? erp(id, `helpdesk/${context.value.ticket_id}/`) : Promise.resolve(null),
   ])
-  return { ...entries, employees, projects, tasks, tickets, ticket }
+  return { ...entries, ticket }
 }, [context, status, search, dateFrom, dateTo, page])
 syncPage(page, data)
 const employeeOptions = computed(() => data.value?.employees.filter(item => auth.canManage || item.user_id === auth.user.id) || [])

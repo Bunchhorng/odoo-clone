@@ -18,7 +18,7 @@ const { data, error, loading, refresh } = useWorkspace(async id => {
   const [record, contacts, projects, members, messages] = await Promise.all([
     erp(id, recordId.value ? `helpdesk/${recordId.value}/` : `helpdesk/?${new URLSearchParams({ q: search.value, status: status.value, active: active.value,
       mine: String(mine.value), overdue: String(overdue.value), project_id: projectId.value, page: String(page.value) })}`),
-    allRecords(id, 'contacts'), allRecords(id, 'projects'), api(`companies/${id}/members/`),
+    allRecords(id, 'contacts'), allRecords(id, 'projects'), auth.canManage ? api(`companies/${id}/members/`) : Promise.resolve({ members: [] }),
     recordId.value ? erp(id, `helpdesk/${recordId.value}/messages/?page=${page.value}`) : Promise.resolve(null),
   ])
   return recordId.value ? { ticket: record, contacts, projects, members: members.members, messages, page: messages.page }

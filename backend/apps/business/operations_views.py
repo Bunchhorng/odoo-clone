@@ -133,6 +133,29 @@ def time_data(item):
         "task_title": item.task.title if item.task_id else "", "ticket_number": item.ticket.number if item.ticket_id else ""}
 
 
+def time_form_options(user, company_id, actor):
+    """Return only choices the current user may use to log time.
+
+    This prevents the timesheet form from using broad catalog endpoints as
+    lookups.  In particular, a member does not need employees:read merely to
+    select their linked employee, and the task list is limited to assignments.
+    """
+    employees = Employee.objects.filter(company_id=company_id, is_active=True)
+    projects = Project.objects.filter(company_id=company_id, is_active=True)
+    tasks = Task.objects.filter(company_id=company_id, is_active=True, project__is_active=True)
+    tickets = HelpdeskTicket.objects.filter(company_id=company_id, is_active=True)
+    if actor.role not in MANAGERS:
+        employees = employees.filter(user=user)
+        tasks = tasks.filter(assignee=user)
+        tickets = tickets.filter(Q(created_by=user) | Q(assignee=user))
+    return {
+        "employees": list(employees.values("id", "name", "user_id").order_by("name", "id")),
+        "projects": list(projects.values("id", "name").order_by("name", "id")),
+        "tasks": list(tasks.values("id", "title", "project_id", "assignee_id").order_by("title", "id")),
+        "tickets": list(tickets.values("id", "number", "title", "project_id", "task_id").order_by("-id")),
+    }
+
+
 @api(["GET", "POST"])
 def timesheets(request, company_id):
     actor = membership_for(request.user, company_id)
@@ -144,6 +167,7 @@ def timesheets(request, company_id):
             submitted_minutes=Sum("minutes", filter=Q(status="submitted")))
         response["summary"] = {key: value or 0 for key, value in response["summary"].items()}
         response["can_log"] = actor.role in MANAGERS or Employee.objects.filter(company_id=company_id, user=request.user, is_active=True).exists()
+        response.update(time_form_options(request.user, company_id, actor))
         return JsonResponse(response)
     with transaction.atomic():
         actor = access(request.user, company_id)
