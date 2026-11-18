@@ -111,13 +111,13 @@ class PermissionRolloutModeTests(TestCase):
         self.assertEqual(response.json()["activities"], [])
 
     @override_settings(PERMISSION_MODE="log")
-    def test_log_self_approval_keeps_legacy_success_and_logs(self):
+    def test_log_self_approval_is_blocked_and_logs(self):
         self.client.force_login(self.owner)
         response, logs = self.log_messages(lambda: self.call("post", f"timesheets/{self.self_time.pk}/actions/", {
             "action": "approve", "expected_version": self.self_time.version,
         }))
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["status"], "approved")
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.headers["X-Permission-Code"], "self_approval_not_allowed")
         self.assertIn("reason=self_approval_not_allowed", logs)
 
     @override_settings(PERMISSION_MODE="enforce")

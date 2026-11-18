@@ -25,7 +25,7 @@ async function submit() {
   <section class="login-page">
     <div><p class="eyebrow">YOUR BUSINESS STARTS HERE</p><h1>Welcome back.<br />Let’s get to work.</h1><p class="intro">One account for your companies and your team.</p></div>
     <form class="panel login-form" @submit.prevent="submit">
-      <h2>Sign in to KERP</h2><p class="muted">Use the account created by your administrator.</p>
+      <h2>Sign in to Odoo</h2><p class="muted">Use the account created by your administrator.</p>
       <p v-if="route.query.expired" class="notice" role="status">Your session ended. Please sign in again.</p>
       <p v-if="error || auth.error" class="notice error" role="alert">{{ error || auth.error }}</p>
       <label>Email address<input v-model="email" name="email" type="email" autocomplete="username" maxlength="254" required :disabled="busy" /></label>

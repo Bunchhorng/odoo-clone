@@ -2,7 +2,6 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
-import { useHealthStore } from '../../stores/health'
 import { applications, authorizedApplications } from '../../data/apps'
 import type { AppDefinition } from '../../types/erp'
 import AppIcon from '../AppIcon.vue'
@@ -11,7 +10,6 @@ import ERPSearchBar from './ERPSearchBar.vue'
 const props = withDefaults(defineProps<{ apps?: AppDefinition[]; loading?: boolean; error?: string }>(), { apps: () => applications, error: '' })
 const emit = defineEmits<{ retry: [] }>()
 const auth = useAuthStore()
-const health = useHealthStore()
 const search = ref('')
 const searchBar = ref<InstanceType<typeof ERPSearchBar>>()
 const permitted = computed(() => auth.user ? authorizedApplications(props.apps, auth.activeCompany?.role) : [])
@@ -28,7 +26,7 @@ onUnmounted(() => document.removeEventListener('keydown', shortcut))
 <template>
   <section class="launcher-page" aria-labelledby="launcher-title" :aria-busy="loading">
     <div class="launcher-heading">
-      <div class="launcher-hero-copy"><p class="eyebrow">KERP BUSINESS SUITE</p><h1 id="launcher-title">Everything your business needs,<br /><span>in one workspace.</span></h1><p>Choose an app to keep your people, customers, and operations connected.</p></div>
+      <div class="launcher-hero-copy"><p class="eyebrow">ODOO BUSINESS SUITE</p><h1 id="launcher-title">Everything your business needs,<br /><span>in one workspace.</span></h1><p>Choose an app to keep your people, customers, and operations connected.</p></div>
       <ERPSearchBar ref="searchBar" v-model="search" label="Search applications" placeholder="Search applications…" :disabled="loading" />
     </div>
     <div class="launcher-context"><AppIcon name="building" /><div><strong>{{ auth.activeCompany?.name || 'Set up your workspace' }}</strong><span>{{ auth.activeCompany ? `Working as ${auth.activeCompany.role}` : 'Create or choose a company to use business applications.' }}</span></div><RouterLink to="/companies" class="text-link">{{ auth.activeCompany ? 'Manage companies' : 'Choose a company' }}</RouterLink></div>
@@ -46,10 +44,5 @@ onUnmounted(() => document.removeEventListener('keydown', shortcut))
       </ul>
     </div>
     <div v-else class="empty-state"><AppIcon name="search" /><h2>{{ search.trim() ? 'No applications found' : 'No applications available' }}</h2><p>{{ search.trim() ? 'Try an application name or a task, such as “orders”.' : 'Your company membership determines which applications you can access.' }}</p><button v-if="search.trim()" type="button" class="button-secondary" @click="search = ''; searchBar?.focus()">Clear search</button></div>
-    <section class="health-panel" aria-label="Connection status">
-      <span class="health-symbol" :class="health.status" aria-hidden="true"><AppIcon :name="health.status === 'disconnected' ? 'warning' : 'connection'" /></span>
-      <div class="health-copy"><h2>{{ health.status === 'connected' ? 'API & database connected' : health.status === 'checking' ? 'Checking API connection…' : 'Connection needs attention' }}</h2><p>{{ health.error || 'Each application loads and validates its own business data.' }}</p><span v-if="health.lastChecked" class="last-checked">Last checked {{ health.lastChecked.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span></div>
-      <button type="button" class="button-secondary" :disabled="health.checking" @click="health.check()">{{ health.checking ? 'Checking…' : 'Check connection' }}</button>
-    </section>
   </section>
 </template>

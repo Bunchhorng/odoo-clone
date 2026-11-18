@@ -42,7 +42,7 @@ onMounted(() => {
 onUnmounted(() => { clearInterval(interval); document.removeEventListener('visibilitychange', checkWhenVisible) })
 watch(() => route.fullPath, () => {
   error.value = ''
-  document.title = `${label.value} · KERP`
+  document.title = `${label.value} · Odoo`
   document.getElementById('main-content')?.focus({ preventScroll: true })
 })
 async function signOut() {
@@ -64,7 +64,7 @@ function entryStatus(entry: AppCatalogueEntry) { return applicationFor(entry) ? 
   <div class="workspace-shell" :class="{ 'is-launcher': route.path === '/' && auth.user }">
     <a href="#main-content" class="skip-link">Skip to content</a>
     <header class="site-header">
-      <RouterLink to="/" class="brand" aria-label="KERP home"><span class="brand-mark" aria-hidden="true">k</span><span>KERP</span></RouterLink>
+      <RouterLink to="/" class="brand" aria-label="Odoo home"><span class="brand-mark" aria-hidden="true">o</span><span>Odoo</span></RouterLink>
       <ERPPopover v-if="auth.user" label="Open applications" panel-class="app-switcher-panel apps-mega-panel">
         <template #trigger><AppIcon name="grid" /><span class="current-app">{{ currentApp?.name || 'Applications' }}</span><AppIcon name="chevron" class="chevron" /></template>
         <template #default>
@@ -103,9 +103,9 @@ function entryStatus(entry: AppCatalogueEntry) { return applicationFor(entry) ? 
     <div v-if="error" class="shell-feedback"><p class="notice error" role="alert">{{ error }}</p></div>
     <main id="main-content" tabindex="-1"><slot /></main>
     <footer class="site-footer">
-      <div class="footer-brand"><span class="footer-mark" aria-hidden="true">k</span><div><strong>KERP</strong><span>One workspace for every team.</span></div></div>
+      <div class="footer-brand"><span class="footer-mark" aria-hidden="true">o</span><div><strong>Odoo</strong><span>One workspace for every team.</span></div></div>
       <nav class="footer-links" aria-label="Footer navigation"><RouterLink v-if="auth.user" to="/">Applications</RouterLink><RouterLink to="/setup">Workspace guide</RouterLink><RouterLink v-if="auth.user" to="/account">Account</RouterLink><RouterLink v-else to="/login">Sign in</RouterLink></nav>
-      <div class="footer-meta"><span>© {{ currentYear }} KERP</span><span v-if="auth.activeCompany">{{ auth.activeCompany.name }}</span></div>
+      <div class="footer-meta"><span>© {{ currentYear }} Odoo</span><span v-if="auth.activeCompany">{{ auth.activeCompany.name }}</span></div>
     </footer>
   </div>
 </template>
