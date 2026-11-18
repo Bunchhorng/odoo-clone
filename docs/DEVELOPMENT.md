@@ -12,7 +12,7 @@ flowchart LR
     Access --> MySQL[(MySQL)]
 ```
 
-The browser uses one origin, normally `localhost:5173`. Vite forwards `/api` to
+The browser uses one origin, normally `localhost:5175`. Vite forwards `/api` to
 `backend:8000` within Docker. Django keeps the session in the database and sends
 an HttpOnly session cookie. The CSRF cookie is readable by Vue so it can attach
 `X-CSRFToken` to writes. No token is stored in localStorage. Use the same hostname

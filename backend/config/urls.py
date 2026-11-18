@@ -1,8 +1,8 @@
 from django.contrib import admin
 from django.urls import include, path
 
-admin.site.site_header = "Odoo Project Administration"
-admin.site.site_title = "Odoo Project"
+admin.site.site_header = "KERP Administration"
+admin.site.site_title = "KERP"
 admin.site.index_title = "Workspace administration"
 
 urlpatterns = [

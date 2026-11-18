@@ -1,7 +1,8 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
-from .models import Company, CompanyMembership
+from .models import Company, CompanyAccessGroup, CompanyAccessGroupMembership, CompanyMembership
+from .seeding import seed_company
 
 User = get_user_model()
 
@@ -52,6 +53,8 @@ class CompanyAccessAPITests(TestCase):
         company = Company.objects.get(pk=company_id)
         self.assertEqual(company.name, "New Company")
         self.assertEqual(company.memberships.get(user=self.owner).role, "owner")
+        self.assertTrue(CompanyAccessGroup.objects.filter(company=company, system_key="admin", is_system=True).exists())
+        self.assertTrue(CompanyAccessGroup.objects.filter(company=company, system_key="member", is_system=True).exists())
         self.assertEqual(self.client.get("/api/v1/auth/session/").json()["active_company_id"], company_id)
 
     def test_company_name_validation(self):
@@ -109,6 +112,15 @@ class CompanyAccessAPITests(TestCase):
         ):
             self.assertEqual(self.update(target, data).status_code, 403)
         self.assertEqual(self.add(email="someone@example.com", role="owner").status_code, 403)
+
+    def test_team_role_change_syncs_only_system_groups(self):
+        seed_company(self.company)
+        custom = CompanyAccessGroup.objects.create(company=self.company, name="Custom", code="custom")
+        CompanyAccessGroupMembership.objects.create(group=custom, user=self.member)
+        self.assertEqual(self.update(self.member_access, {"role": "admin"}).status_code, 200)
+        self.assertTrue(CompanyAccessGroupMembership.objects.filter(group__system_key="admin", user=self.member).exists())
+        self.assertFalse(CompanyAccessGroupMembership.objects.filter(group__system_key="member", user=self.member).exists())
+        self.assertTrue(CompanyAccessGroupMembership.objects.filter(group=custom, user=self.member).exists())
 
     def test_final_owner_cannot_be_demoted_or_deactivated(self):
         for data in ({"role": "member"}, {"is_active": False}):

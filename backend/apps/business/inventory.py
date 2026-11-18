@@ -4,15 +4,273 @@ import json
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from django.db.models import DecimalField, Sum, Value
+from django.db.models import DecimalField, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from apps.core.api import APIError, text_field
-from .models import Product, PurchaseReceipt, StockMovement
+from .locations import ensure_defaults
+from .models import CustomerReturn, CustomerReturnLine, Product, PurchaseReceipt, StockMovement, StockReservation, StockOperation, StockOperationLine, StockTransfer, StockTransferLine, StockLocation
 from .services import ZERO, check_version, decimal_value, next_number, positive_id, record_activity, scoped, stock_for
 
 MAX_QUANTITY = Decimal("999999999.999")
+
+
+def reserve_sale(order, user, data):
+    """Reserve confirmed-sale goods at the current default internal location."""
+    if order.kind != "sale" or order.status != "confirmed":
+        raise APIError("Only confirmed sales orders can reserve stock.", 409)
+    request_id = request_uuid(data, required=True)
+    raw = data.get("lines")
+    if not isinstance(raw, list) or not raw:
+        raise APIError("Choose one or more goods lines to reserve.")
+    requested = {}
+    for item in raw:
+        if not isinstance(item, dict) or set(item) != {"line_id", "quantity"}:
+            raise APIError("Each reservation line needs only line_id and quantity.")
+        line_id = positive_id(item["line_id"])
+        if line_id in requested:
+            raise APIError("Each sales line may appear only once in a reservation.")
+        requested[line_id] = decimal_value(item["quantity"], "Reservation quantity", places=3,
+            minimum=Decimal("0.001"), maximum=MAX_QUANTITY)
+    existing = list(StockReservation.objects.filter(request_id=request_id).select_related("order_line"))
+    if existing:
+        existing_lines = {row.order_line_id: row.quantity for row in existing}
+        if (any(row.company_id != order.company_id or row.order_line.order_id != order.pk for row in existing)
+                or existing_lines != requested):
+            raise APIError("This reservation request was already used with different details.", 409)
+        return existing, False
+    location, _ = ensure_defaults(order.company_id)
+    lines = {line.pk: line for line in order.lines.select_related("product").filter(product_kind="goods")}
+    if set(requested) - set(lines):
+        raise APIError("Choose goods lines belonging to this sales order.")
+    rows = []
+    for line_id, quantity in requested.items():
+        line = lines[line_id]
+        active_line = StockReservation.objects.filter(order_line=line, state="active").aggregate(value=Sum("quantity"))["value"] or ZERO
+        if quantity + active_line > line.quantity:
+            raise APIError(f"The reservation exceeds the remaining quantity for {line.description}.", 409)
+        on_hand = StockMovement.objects.filter(product=line.product).filter(Q(source_location=location) | Q(destination_location=location)).aggregate(value=Sum("quantity"))["value"] or ZERO
+        active_product = StockReservation.objects.filter(product=line.product, location=location, state="active").aggregate(value=Sum("quantity"))["value"] or ZERO
+        if quantity > on_hand - active_product:
+            raise APIError(f"Insufficient available stock for {line.product.name}.", 409)
+        rows.append(StockReservation(company_id=order.company_id, order_line=line, product=line.product,
+            location=location, request_id=request_id, quantity=quantity, actor_email=user.email))
+    StockReservation.objects.bulk_create(rows)
+    record_activity(user, order.company_id, "orders", order, f"Reserved stock for {order.number}")
+    return rows, True
+
+
+def release_reservations(order, user, data):
+    """Release an entire retry-safe reservation request before it is picked."""
+    request_id = request_uuid(data, required=True)
+    rows = list(StockReservation.objects.select_for_update().filter(company_id=order.company_id,
+        request_id=request_id, order_line__order=order))
+    if not rows:
+        raise APIError("Reservation request not found for this sales order.", 404)
+    if any(row.operation_id for row in rows):
+        raise APIError("Reservations assigned to a delivery cannot be released.", 409)
+    changed = False
+    for row in rows:
+        if row.state == "active":
+            row.state = "released"; row.save(update_fields=["state", "updated_at"]); changed = True
+    if changed:
+        record_activity(user, order.company_id, "orders", order, f"Released reservation for {order.number}")
+    return rows, changed
+
+
+def operation_data(operation):
+    return {"id": operation.pk, "number": operation.number, "order_id": operation.order_id,
+            "source_location_id": operation.source_location_id, "status": operation.status,
+            "backorder_of_id": operation.backorder_of_id, "request_id": operation.request_id,
+            "lines": [{"id": line.pk, "order_line_id": line.order_line_id, "product_id": line.product_id,
+                       "description": line.description, "planned_quantity": line.planned_quantity,
+                       "done_quantity": line.done_quantity} for line in operation.lines.all()]}
+
+
+def create_delivery(order, user, data, *, backorder_of=None, quantities=None):
+    if order.kind != "sale" or order.status != "confirmed":
+        raise APIError("Deliveries require a confirmed sales order.", 409)
+    request_id = request_uuid(data, required=True)
+    existing = StockOperation.objects.filter(request_id=request_id).prefetch_related("lines").first()
+    if existing:
+        if existing.company_id != order.company_id or existing.order_id != order.pk:
+            raise APIError("This delivery request was already used with different details.", 409)
+        return existing, False
+    location, _ = ensure_defaults(order.company_id)
+    reservations = list(StockReservation.objects.select_for_update().filter(order_line__order=order,
+        state="active", operation__isnull=True).select_related("order_line", "product"))
+    by_line = {}
+    for row in reservations:
+        by_line[row.order_line_id] = by_line.get(row.order_line_id, ZERO) + row.quantity
+    if quantities is None:
+        quantities = by_line
+    if not quantities:
+        raise APIError("Reserve goods before creating a delivery.", 409)
+    lines = {line.pk: line for line in order.lines.filter(product_kind="goods").select_related("product")}
+    if set(quantities) - set(lines) or any(value <= 0 or value > by_line.get(key, ZERO) for key, value in quantities.items()):
+        raise APIError("A delivery can contain only currently reserved goods quantities.", 409)
+    operation = StockOperation.objects.create(company_id=order.company_id, order=order,
+        number=next_number(order.company_id, "PICK"), request_id=request_id, source_location=location,
+        backorder_of=backorder_of, actor_email=user.email)
+    StockOperationLine.objects.bulk_create([StockOperationLine(operation=operation, order_line=lines[line_id],
+        product=lines[line_id].product, description=lines[line_id].description, planned_quantity=quantity)
+        for line_id, quantity in quantities.items()])
+    # A reservation row is deliberately claimed by one operation, so it cannot be picked twice.
+    for row in reservations:
+        if row.order_line_id in quantities:
+            row.operation = operation; row.save(update_fields=["operation", "updated_at"])
+    operation = StockOperation.objects.prefetch_related("lines").get(pk=operation.pk)
+    record_activity(user, order.company_id, "orders", order, f"Created delivery {operation.number}: {order.number}")
+    return operation, True
+
+
+def validate_delivery(operation, user, data):
+    if operation.status == "done":
+        return operation, False, None
+    if operation.status != "draft":
+        raise APIError("Only draft deliveries can be validated.", 409)
+    raw = data.get("lines")
+    if not isinstance(raw, list) or not raw:
+        raise APIError("Supply completed quantities for this delivery.")
+    done = {}
+    for entry in raw:
+        if not isinstance(entry, dict) or set(entry) != {"line_id", "quantity"}:
+            raise APIError("Each delivery line needs only line_id and quantity.")
+        line_id = positive_id(entry["line_id"])
+        if line_id in done: raise APIError("Each delivery line may appear only once.")
+        done[line_id] = decimal_value(entry["quantity"], "Delivered quantity", places=3, minimum=ZERO, maximum=MAX_QUANTITY)
+    lines = {line.pk: line for line in operation.lines.select_related("product", "order_line")}
+    if set(done) != set(lines) or any(quantity > lines[key].planned_quantity for key, quantity in done.items()):
+        raise APIError("Delivered quantities must match this delivery's planned lines.", 409)
+    for line_id, quantity in done.items():
+        if quantity:
+            line = lines[line_id]
+            StockMovement.objects.create(company_id=operation.company_id, product=line.product, order=operation.order,
+                order_line=line.order_line, operation=operation, quantity=-quantity,
+                reason=f"Delivery {operation.number}: {operation.order.number}", actor_email=user.email)
+        lines[line_id].done_quantity = quantity
+    StockOperationLine.objects.bulk_update(list(lines.values()), ["done_quantity"])
+    operation.status = "done"; operation.save(update_fields=["status", "updated_at"])
+    remainder = {line.order_line_id: line.planned_quantity - done[line.pk] for line in lines.values() if line.planned_quantity > done[line.pk]}
+    backorder = None
+    if remainder:
+        # Reuse the claimed reservations; no extra capacity is created.
+        StockReservation.objects.filter(operation=operation, state="active").update(operation=None)
+        backorder, _ = create_delivery(operation.order, user, {"request_id": str(uuid4())}, backorder_of=operation, quantities=remainder)
+    else:
+        StockReservation.objects.filter(operation=operation, state="active").update(state="consumed")
+    goods = operation.order.lines.filter(product_kind="goods")
+    delivered = {row["order_line_id"]: -row["value"] for row in StockMovement.objects.filter(order=operation.order,
+        quantity__lt=0, operation__isnull=False).values("order_line_id").annotate(value=Sum("quantity"))}
+    if all(delivered.get(line.pk, ZERO) >= line.quantity for line in goods):
+        operation.order.fulfilled_at = timezone.now(); operation.order.version += 1
+        operation.order.save(update_fields=["fulfilled_at", "version", "updated_at"])
+    record_activity(user, operation.company_id, "orders", operation.order, f"Validated delivery {operation.number}")
+    return StockOperation.objects.prefetch_related("lines").get(pk=operation.pk), True, backorder
+
+
+def create_transfer(company_id, user, data):
+    request_id = request_uuid(data, required=True)
+    raw = data.get("lines")
+    if not isinstance(raw, list) or not raw: raise APIError("Choose one or more products to transfer.")
+    source_id = positive_id(data.get("source_location_id")); destination_id = positive_id(data.get("destination_location_id"))
+    lines = {}
+    for entry in raw:
+        if not isinstance(entry, dict) or set(entry) != {"product_id", "quantity"}: raise APIError("Each transfer line needs product_id and quantity.")
+        product_id = positive_id(entry["product_id"])
+        if product_id in lines: raise APIError("Choose each active goods product once.")
+        lines[product_id] = decimal_value(entry["quantity"], "Transfer quantity", places=3, minimum=Decimal("0.001"), maximum=MAX_QUANTITY)
+    digest = hashlib.sha256(json.dumps({"source": source_id, "destination": destination_id, "lines": sorted((key, str(value)) for key, value in lines.items())}, sort_keys=True).encode()).hexdigest()
+    existing = StockTransfer.objects.filter(request_id=request_id).prefetch_related("lines").first()
+    if existing:
+        if existing.company_id != company_id or existing.payload_digest != digest: raise APIError("This transfer request was already used with different details.", 409)
+        return existing, False
+    source = scoped(StockLocation, company_id, source_id); destination = scoped(StockLocation, company_id, destination_id)
+    if source.pk == destination.pk or source.usage != "internal" or destination.usage != "internal" or not source.is_active or not destination.is_active:
+        raise APIError("Choose two different active internal locations.")
+    for product_id in lines:
+        product = scoped(Product, company_id, product_id)
+        if product.kind != "goods" or not product.is_active: raise APIError("Choose each active goods product once.")
+    transfer = StockTransfer.objects.create(company_id=company_id, number=next_number(company_id, "TR"), request_id=request_id,
+        payload_digest=digest, source_location=source, destination_location=destination, actor_email=user.email)
+    StockTransferLine.objects.bulk_create([StockTransferLine(transfer=transfer, product_id=product_id, quantity=quantity) for product_id, quantity in lines.items()])
+    return StockTransfer.objects.prefetch_related("lines__product").get(pk=transfer.pk), True
+
+
+def validate_transfer(transfer, user, data):
+    if transfer.status == "done": return transfer, False
+    if transfer.status != "draft": raise APIError("Only draft transfers can be validated.", 409)
+    quantities = {positive_id(item["line_id"]): decimal_value(item["quantity"], "Transferred quantity", places=3, minimum=ZERO, maximum=MAX_QUANTITY)
+        for item in data.get("lines", []) if isinstance(item, dict) and set(item) == {"line_id", "quantity"}}
+    lines = {line.pk: line for line in transfer.lines.select_related("product")}
+    if set(quantities) != set(lines) or any(quantities[key] > lines[key].quantity for key in lines): raise APIError("Transfer quantities must match its planned lines.", 409)
+    for line_id, quantity in quantities.items():
+        line = lines[line_id]
+        if quantity > 0:
+            # A linked outgoing/incoming pair preserves company stock while making both locations auditable.
+            customer = ensure_defaults(transfer.company_id)[1]["customer"]
+            StockMovement.objects.create(company_id=transfer.company_id, product=line.product, transfer=transfer, quantity=-quantity,
+                source_location=transfer.source_location, destination_location=customer, reason=f"Transfer {transfer.number}", actor_email=user.email)
+            StockMovement.objects.create(company_id=transfer.company_id, product=line.product, transfer=transfer, quantity=quantity,
+                source_location=customer, destination_location=transfer.destination_location, reason=f"Transfer {transfer.number}", actor_email=user.email)
+        line.done_quantity = quantity
+    StockTransferLine.objects.bulk_update(list(lines.values()), ["done_quantity"])
+    transfer.status = "done"; transfer.save(update_fields=["status", "updated_at"])
+    record_activity(user, transfer.company_id, "stock", transfer, f"Validated transfer {transfer.number}")
+    return transfer, True
+
+
+def create_customer_return(order, user, data):
+    if order.kind != "sale" or order.status != "confirmed": raise APIError("Customer returns require a confirmed sales order.", 409)
+    request_id = request_uuid(data, required=True)
+    reason = text_field(data, "reason", maximum=300); restockable = data.get("restockable")
+    if not isinstance(restockable, bool): raise APIError("restockable must be true or false.")
+    raw = data.get("lines")
+    if not isinstance(raw, list) or not raw: raise APIError("Choose delivered goods to return.")
+    requested = {}
+    for entry in raw:
+        if not isinstance(entry, dict) or set(entry) != {"delivery_movement_id", "quantity"}: raise APIError("Each return line needs delivery_movement_id and quantity.")
+        movement_id = positive_id(entry["delivery_movement_id"])
+        if movement_id in requested: raise APIError("Each delivery movement may appear only once in a return.")
+        quantity = decimal_value(entry["quantity"], "Return quantity", places=3, minimum=Decimal("0.001"), maximum=MAX_QUANTITY)
+        requested[movement_id] = quantity
+    digest = hashlib.sha256(json.dumps({"order": order.pk, "reason": reason, "restockable": restockable,
+        "lines": sorted((key, str(value)) for key, value in requested.items())}, sort_keys=True).encode()).hexdigest()
+    existing = CustomerReturn.objects.filter(request_id=request_id).prefetch_related("lines").first()
+    if existing:
+        if existing.company_id != order.company_id or existing.order_id != order.pk or existing.payload_digest != digest:
+            raise APIError("This return request was already used with different details.", 409)
+        return existing, False
+    rows = []
+    for movement_id, quantity in requested.items():
+        movement = scoped(StockMovement, order.company_id, movement_id)
+        if movement.order_id != order.pk or movement.quantity >= 0 or not movement.order_line_id: raise APIError("Choose an original sales delivery movement.")
+        returned = CustomerReturnLine.objects.filter(delivery_movement=movement, customer_return__status="approved").aggregate(value=Sum("quantity"))["value"] or ZERO
+        if quantity + returned > -movement.quantity: raise APIError("The return exceeds the delivered quantity.", 409)
+        rows.append((movement, quantity))
+    customer_return = CustomerReturn.objects.create(company_id=order.company_id, number=next_number(order.company_id, "RET"), request_id=request_id,
+        payload_digest=digest, order=order, restockable=restockable, reason=reason, actor_email=user.email)
+    CustomerReturnLine.objects.bulk_create([CustomerReturnLine(customer_return=customer_return, order_line_id=movement.order_line_id, delivery_movement=movement, quantity=quantity) for movement, quantity in rows])
+    return CustomerReturn.objects.prefetch_related("lines__delivery_movement").get(pk=customer_return.pk), True
+
+
+def decide_customer_return(customer_return, user, approve):
+    if customer_return.status != "requested": return customer_return, False
+    if not approve:
+        customer_return.status = "rejected"; customer_return.save(update_fields=["status", "updated_at"]); return customer_return, True
+    stock, virtuals = ensure_defaults(customer_return.company_id)
+    for line in customer_return.lines.select_related("delivery_movement", "delivery_movement__product"):
+        if customer_return.restockable:
+            movement = StockMovement.objects.create(company_id=customer_return.company_id, product=line.delivery_movement.product, order=customer_return.order,
+                order_line=line.order_line, quantity=line.quantity, source_location=virtuals["customer"], destination_location=stock,
+                reason=f"Customer return {customer_return.number}: {customer_return.reason}", actor_email=user.email)
+            line.movement = movement; line.save(update_fields=["movement"])
+    customer_return.status = "approved"; customer_return.save(update_fields=["status", "updated_at"])
+    record_activity(user, customer_return.company_id, "orders", customer_return.order, f"Approved customer return {customer_return.number}")
+    return customer_return, True
+
+
 
 
 def request_uuid(data, *, required=False):
@@ -116,8 +374,9 @@ def adjustment(user, company_id, data):
     product = scoped(Product, company_id, product_id)
     if product.kind != "goods" or not product.is_active:
         raise APIError("Stock adjustments require an active goods product.")
-    if stock_for(product) + quantity < 0:
-        raise APIError("This change would make stock negative.", 409)
+    reserved = StockReservation.objects.filter(company_id=company_id, product=product, state="active").aggregate(value=Sum("quantity"))["value"] or ZERO
+    if stock_for(product) + quantity < reserved:
+        raise APIError("This change would consume stock already reserved for delivery.", 409)
     movement = StockMovement.objects.create(company_id=company_id, product=product, quantity=quantity,
         reason=reason, actor_email=user.email, request_id=request_id)
     record_activity(user, company_id, "products", product, f"Stock {quantity:+}: {product.name} — {reason}")

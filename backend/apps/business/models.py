@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from django.conf import settings
 from django.core.validators import MinValueValidator, MaxValueValidator
-from django.db import models
+from django.db import models, router, transaction
 from django.utils import timezone
 
 
@@ -156,23 +156,206 @@ class PurchaseReceipt(CompanyRecord):
         constraints = [models.UniqueConstraint(fields=("company", "number"), name="business_company_receipt_number")]
 
 
+class StockReservation(CompanyRecord):
+    """A demand allocation; it never changes the physical stock ledger."""
+    order_line = models.ForeignKey(OrderLine, on_delete=models.PROTECT, related_name="reservations")
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="reservations")
+    location = models.ForeignKey("StockLocation", on_delete=models.PROTECT, related_name="reservations")
+    request_id = models.UUIDField()
+    quantity = models.DecimalField(max_digits=12, decimal_places=3, validators=[MinValueValidator(Decimal("0.001"))])
+    state = models.CharField(max_length=12, default="active", choices=[
+        ("active", "Active"), ("released", "Released"), ("consumed", "Consumed"),
+    ])
+    actor_email = models.EmailField()
+    operation = models.ForeignKey("StockOperation", null=True, blank=True, on_delete=models.PROTECT,
+                                  related_name="reservations")
+
+    class Meta(CompanyRecord.Meta):
+        constraints = [models.UniqueConstraint(fields=("company", "request_id", "order_line"), name="business_reserve_request_line")]
+        indexes = [models.Index(fields=("company", "product", "location", "state"), name="business_reserve_stock")]
+
+
+class StockOperation(CompanyRecord):
+    """An immutable-on-completion physical sales delivery document."""
+    order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="stock_operations")
+    number = models.CharField(max_length=30)
+    request_id = models.UUIDField(unique=True)
+    source_location = models.ForeignKey("StockLocation", on_delete=models.PROTECT, related_name="delivery_operations")
+    status = models.CharField(max_length=12, default="draft", choices=[
+        ("draft", "Draft"), ("done", "Done"), ("cancelled", "Cancelled"),
+    ])
+    backorder_of = models.OneToOneField("self", null=True, blank=True, on_delete=models.PROTECT,
+                                        related_name="backorder")
+    actor_email = models.EmailField()
+
+    class Meta(CompanyRecord.Meta):
+        constraints = [models.UniqueConstraint(fields=("company", "number"), name="business_company_operation_number")]
+
+
+class StockOperationLine(models.Model):
+    operation = models.ForeignKey(StockOperation, on_delete=models.CASCADE, related_name="lines")
+    order_line = models.ForeignKey(OrderLine, on_delete=models.PROTECT, related_name="operation_lines")
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="operation_lines")
+    description = models.CharField(max_length=300)
+    planned_quantity = models.DecimalField(max_digits=12, decimal_places=3)
+    done_quantity = models.DecimalField(max_digits=12, decimal_places=3, default=0)
+
+    class Meta:
+        ordering = ("id",)
+        constraints = [models.UniqueConstraint(fields=("operation", "order_line"), name="business_operation_order_line")]
+
+
+class StockLocation(CompanyRecord):
+    class Usage(models.TextChoices):
+        INTERNAL = "internal", "Internal"
+        SUPPLIER = "supplier", "Supplier"
+        CUSTOMER = "customer", "Customer"
+        INVENTORY = "inventory", "Inventory adjustment"
+        VIEW = "view", "View / grouping"
+
+    name = models.CharField(max_length=100)
+    code = models.CharField(max_length=64)
+    usage = models.CharField(max_length=12, choices=Usage.choices, default=Usage.INTERNAL)
+    parent = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="children")
+    is_active = models.BooleanField(default=True)
+    system_key = models.CharField(max_length=16, null=True, blank=True, editable=False)
+
+    class Meta(CompanyRecord.Meta):
+        ordering = ("code", "id")
+        constraints = [
+            models.UniqueConstraint(fields=("company", "code"), name="business_location_code"),
+            models.UniqueConstraint(fields=("company", "system_key"), name="business_location_system"),
+            models.CheckConstraint(condition=models.Q(usage__in=["internal", "supplier", "customer", "inventory", "view"]), name="business_location_usage"),
+        ]
+        indexes = [models.Index(fields=("company", "usage", "is_active"), name="business_location_scope")]
+
+    def clean(self):
+        from .locations import validate_location
+        validate_location(self)
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+
+class Warehouse(CompanyRecord):
+    name = models.CharField(max_length=100)
+    code = models.CharField(max_length=16)
+    stock_location = models.OneToOneField(StockLocation, on_delete=models.PROTECT, related_name="warehouse")
+    is_active = models.BooleanField(default=True)
+    system_key = models.CharField(max_length=16, null=True, blank=True, editable=False)
+
+    class Meta(CompanyRecord.Meta):
+        ordering = ("code", "id")
+        constraints = [
+            models.UniqueConstraint(fields=("company", "code"), name="business_warehouse_code"),
+            models.UniqueConstraint(fields=("company", "system_key"), name="business_warehouse_system"),
+        ]
+        indexes = [models.Index(fields=("company", "is_active"), name="business_warehouse_scope")]
+
+    def clean(self):
+        from .locations import validate_warehouse
+        validate_warehouse(self)
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+
 class StockMovement(CompanyRecord):
     product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="movements")
     order = models.ForeignKey(Order, null=True, blank=True, on_delete=models.PROTECT, related_name="movements")
     order_line = models.ForeignKey(OrderLine, null=True, blank=True, on_delete=models.PROTECT, related_name="movements")
     receipt = models.ForeignKey(PurchaseReceipt, null=True, blank=True, on_delete=models.PROTECT, related_name="movements")
+    operation = models.ForeignKey(StockOperation, null=True, blank=True, on_delete=models.PROTECT, related_name="movements")
+    transfer = models.ForeignKey("StockTransfer", null=True, blank=True, on_delete=models.PROTECT, related_name="movements")
     request_id = models.UUIDField(null=True, blank=True, unique=True)
     return_of = models.ForeignKey("self", null=True, blank=True, on_delete=models.PROTECT, related_name="returns")
     reversal_of = models.OneToOneField("self", null=True, blank=True, on_delete=models.PROTECT, related_name="reversal")
+    source_location = models.ForeignKey(StockLocation, on_delete=models.PROTECT, related_name="outgoing_movements")
+    destination_location = models.ForeignKey(StockLocation, on_delete=models.PROTECT, related_name="incoming_movements")
+    location_inferred = models.BooleanField(default=False, editable=False)
     quantity = models.DecimalField(max_digits=12, decimal_places=3)
     reason = models.CharField(max_length=300)
     actor_email = models.EmailField()
+
+    class Meta(CompanyRecord.Meta):
+        constraints = [models.CheckConstraint(condition=~models.Q(source_location=models.F("destination_location")), name="business_movement_distinct_locs")]
+        indexes = [
+            models.Index(fields=("company", "source_location", "product"), name="business_stock_source"),
+            models.Index(fields=("company", "destination_location", "product"), name="business_stock_destination"),
+        ]
+
+    def clean(self):
+        from .locations import validate_movement_locations
+        validate_movement_locations(self)
+
+    def save(self, *args, **kwargs):
+        # Retain compatibility with existing ledger writers, seeds and ORM callers.
+        # Bulk writes intentionally require explicit endpoints (enforced by NOT NULL).
+        using = kwargs.get("using") or router.db_for_write(type(self), instance=self)
+        from apps.companies.models import Company
+        from .locations import assign_movement_locations
+        with transaction.atomic(using=using):
+            Company.objects.using(using).select_for_update().get(pk=self.company_id)
+            if not self.source_location_id and not self.destination_location_id:
+                assign_movement_locations(self, using=using)
+            self.clean()
+            return super().save(*args, **kwargs)
+
+
+class StockTransfer(CompanyRecord):
+    number = models.CharField(max_length=30)
+    request_id = models.UUIDField(unique=True)
+    payload_digest = models.CharField(max_length=64)
+    source_location = models.ForeignKey(StockLocation, on_delete=models.PROTECT, related_name="transfer_sources")
+    destination_location = models.ForeignKey(StockLocation, on_delete=models.PROTECT, related_name="transfer_destinations")
+    status = models.CharField(max_length=12, default="draft", choices=[("draft", "Draft"), ("done", "Done"), ("cancelled", "Cancelled")])
+    actor_email = models.EmailField()
+
+    class Meta(CompanyRecord.Meta):
+        constraints = [models.UniqueConstraint(fields=("company", "number"), name="business_company_transfer_number")]
+
+
+class StockTransferLine(models.Model):
+    transfer = models.ForeignKey(StockTransfer, on_delete=models.CASCADE, related_name="lines")
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    quantity = models.DecimalField(max_digits=12, decimal_places=3)
+    done_quantity = models.DecimalField(max_digits=12, decimal_places=3, default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=("transfer", "product"), name="business_transfer_product")]
+
+
+class CustomerReturn(CompanyRecord):
+    number = models.CharField(max_length=30)
+    request_id = models.UUIDField(unique=True)
+    payload_digest = models.CharField(max_length=64)
+    order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="customer_returns")
+    status = models.CharField(max_length=12, default="requested", choices=[("requested", "Requested"), ("approved", "Approved"), ("rejected", "Rejected")])
+    restockable = models.BooleanField(default=True)
+    reason = models.CharField(max_length=300)
+    actor_email = models.EmailField()
+
+    class Meta(CompanyRecord.Meta):
+        constraints = [models.UniqueConstraint(fields=("company", "number"), name="business_company_customer_return_number")]
+
+
+class CustomerReturnLine(models.Model):
+    customer_return = models.ForeignKey(CustomerReturn, on_delete=models.CASCADE, related_name="lines")
+    order_line = models.ForeignKey(OrderLine, on_delete=models.PROTECT)
+    delivery_movement = models.ForeignKey(StockMovement, on_delete=models.PROTECT, related_name="customer_return_lines")
+    quantity = models.DecimalField(max_digits=12, decimal_places=3)
+    movement = models.OneToOneField(StockMovement, null=True, blank=True, on_delete=models.PROTECT, related_name="customer_return_receipt")
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=("customer_return", "delivery_movement"), name="business_customer_return_delivery")]
 
 
 class Invoice(CompanyRecord):
     kind = models.CharField(max_length=10, choices=[("customer", "Customer Invoice"), ("vendor", "Vendor Bill")])
     version = models.PositiveIntegerField(default=1)
-    order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name="invoice")
+    order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name="invoices")
+    request_id = models.UUIDField(null=True, blank=True, unique=True)
+    payload_digest = models.CharField(max_length=64, blank=True)
     number = models.CharField(max_length=30)
     contact = models.ForeignKey(Contact, on_delete=models.PROTECT)
     contact_name = models.CharField(max_length=200)
@@ -191,6 +374,24 @@ class Invoice(CompanyRecord):
 
     class Meta(CompanyRecord.Meta):
         constraints = [models.UniqueConstraint(fields=("company", "number"), name="business_company_invoice_number")]
+
+
+class InvoiceLine(models.Model):
+    invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name="lines")
+    order_line = models.ForeignKey(OrderLine, on_delete=models.PROTECT, related_name="invoice_lines")
+    quantity = models.DecimalField(max_digits=12, decimal_places=3)
+    description = models.CharField(max_length=300)
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2)
+    tax_rate = models.DecimalField(max_digits=5, decimal_places=2)
+    subtotal = models.DecimalField(max_digits=16, decimal_places=2)
+    tax_total = models.DecimalField(max_digits=16, decimal_places=2)
+    total = models.DecimalField(max_digits=16, decimal_places=2)
+
+    class Meta:
+        ordering = ("id",)
+        constraints = [models.UniqueConstraint(fields=("invoice", "order_line"), name="business_invoice_order_line")]
+
+
 
 
 class Payment(CompanyRecord):

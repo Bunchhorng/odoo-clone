@@ -3,31 +3,126 @@ from datetime import timedelta
 from uuid import uuid4
 
 from django.contrib.auth import get_user_model
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
 from apps.companies.models import Company, CompanyMembership
-from apps.business.models import Activity, Contact, Opportunity, Product, Project, StockMovement, Task, WorkspaceSettings
+from apps.business.models import (
+    AccountingSettings, Activity, CatalogImport, Contact, CustomerReturn, CustomerReturnLine,
+    Department, DocumentSequence, Employee, HelpdeskTicket, Invoice, InvoiceLine, JournalEntry,
+    LedgerAccount, Opportunity, Order, OrderLine, Payment, Product, ProductCategory, Project,
+    PurchaseReceipt, StockLocation, StockMovement, StockOperation, StockOperationLine,
+    StockReservation, StockTransfer, StockTransferLine, Task, TicketMessage, TimesheetEntry,
+    Warehouse, WorkspaceSettings,
+)
 from apps.business.services import fulfill_order, invoice_order, register_payment, save_order
 from apps.business.accounting import post_invoice
 
 
 class Command(BaseCommand):
-    help = "Create a separate demo company for an existing active user. Existing demo companies are left unchanged."
+    help = "Create, verify, or safely reset an isolated demo company for an existing active user."
 
     def add_arguments(self, parser):
         parser.add_argument("--email", required=True, help="Existing user's email; no account password is created or changed.")
+        parser.add_argument("--dry-run", action="store_true", help="Validate and report the seed without committing records.")
+        parser.add_argument("--verify", action="store_true", help="Verify an existing demo workspace without changing records.")
+        parser.add_argument("--reset-demo", action="store_true", help="Delete only this user's isolated demo workspace.")
+        parser.add_argument("--confirm-reset", action="store_true", help="Required with --reset-demo.")
+
+    @staticmethod
+    def demo_slug(user):
+        return f"kerp-demo-{user.pk}"
+
+    @staticmethod
+    def summary(company):
+        return {
+            "contacts": Contact.objects.filter(company=company).count(),
+            "products": Product.objects.filter(company=company).count(),
+            "opportunities": Opportunity.objects.filter(company=company).count(),
+            "projects": Project.objects.filter(company=company).count(),
+            "stock_movements": StockMovement.objects.filter(company=company).count(),
+        }
+
+    @staticmethod
+    def clear_demo_company(company):
+        """Delete the known company-owned graph in dependency order, never by table truncation."""
+        TicketMessage.objects.filter(ticket__company=company).delete()
+        TimesheetEntry.objects.filter(company=company).delete()
+        HelpdeskTicket.objects.filter(company=company).delete()
+        CustomerReturnLine.objects.filter(customer_return__company=company).delete()
+        CustomerReturn.objects.filter(company=company).delete()
+        StockMovement.objects.filter(company=company).delete()
+        StockTransferLine.objects.filter(transfer__company=company).delete()
+        StockTransfer.objects.filter(company=company).delete()
+        StockOperationLine.objects.filter(operation__company=company).delete()
+        StockReservation.objects.filter(company=company).delete()
+        JournalEntry.objects.filter(company=company).delete()
+        Payment.objects.filter(company=company).delete()
+        InvoiceLine.objects.filter(invoice__company=company).delete()
+        Invoice.objects.filter(company=company).delete()
+        PurchaseReceipt.objects.filter(company=company).delete()
+        StockOperation.objects.filter(company=company).delete()
+        OrderLine.objects.filter(order__company=company).delete()
+        Order.objects.filter(company=company).delete()
+        Task.objects.filter(company=company).delete()
+        Project.objects.filter(company=company).delete()
+        Employee.objects.filter(company=company).delete()
+        Department.objects.filter(company=company).delete()
+        Opportunity.objects.filter(company=company).delete()
+        Activity.objects.filter(company=company).delete()
+        Warehouse.objects.filter(company=company).delete()
+        StockLocation.objects.filter(company=company).delete()
+        LedgerAccount.objects.filter(company=company).delete()
+        DocumentSequence.objects.filter(company=company).delete()
+        CatalogImport.objects.filter(company=company).delete()
+        Product.objects.filter(company=company).delete()
+        ProductCategory.objects.filter(company=company).delete()
+        WorkspaceSettings.objects.filter(company=company).delete()
+        AccountingSettings.objects.filter(company=company).delete()
+        CompanyMembership.objects.filter(company=company).delete()
+        company.delete()
 
     @transaction.atomic
     def handle(self, *args, **options):
+        if not settings.DEBUG:
+            raise CommandError("seed_demo is restricted to Django DEBUG environments.")
+        if options["verify"] and (options["dry_run"] or options["reset_demo"]):
+            raise CommandError("--verify cannot be combined with --dry-run or --reset-demo.")
+        if options["reset_demo"] and not options["confirm_reset"]:
+            raise CommandError("--reset-demo requires --confirm-reset.")
         user = get_user_model().objects.filter(email__iexact=options["email"], is_active=True).first()
         if user is None:
             raise CommandError("Create an active user account first, then supply its email.")
-        slug = f"kerp-demo-{user.pk}"
-        company, created = Company.objects.get_or_create(slug=slug, defaults={"name": "KERP Demo"})
+        slug = self.demo_slug(user)
+        existing = Company.objects.filter(slug=slug).first()
+        if options["verify"]:
+            if existing is None:
+                raise CommandError("No isolated demo workspace exists for this account.")
+            counts = self.summary(existing)
+            required = {"contacts": 6, "products": 8, "opportunities": 5, "projects": 3, "stock_movements": 7}
+            if any(counts[key] < minimum for key, minimum in required.items()):
+                raise CommandError(f"Demo verification failed: {counts}.")
+            self.stdout.write(self.style.SUCCESS(f"Verified Odoo Demo ({existing.slug}): {counts}"))
+            return
+        if options["reset_demo"]:
+            if existing is None:
+                self.stdout.write("No isolated demo workspace exists; nothing was deleted.")
+                return
+            # The namespace is per-user; remove only its explicitly scoped graph.
+            if existing.name not in ("KERP Demo", "Odoo Demo"):
+                raise CommandError("Refusing to reset a company outside the Odoo Demo namespace.")
+            if options["dry_run"]:
+                self.stdout.write(f"Dry run: would delete isolated demo workspace {existing.slug}.")
+                transaction.set_rollback(True)
+                return
+            self.clear_demo_company(existing)
+            self.stdout.write(self.style.SUCCESS("Deleted the isolated Odoo Demo workspace. Existing companies and accounts were preserved."))
+            return
+        company, created = Company.objects.get_or_create(slug=slug, defaults={"name": "Odoo Demo"})
         if not created:
-            self.stdout.write("Demo company already exists; no records were changed.")
+            self.stdout.write(f"Demo company already exists; no records were changed. Counts: {self.summary(company)}")
             return
         CompanyMembership.objects.create(company=company, user=user, role="owner")
         WorkspaceSettings.objects.create(company=company, currency="USD")
@@ -109,4 +204,9 @@ class Command(BaseCommand):
                     due_date=timezone.localdate() + timedelta(days=task_index * 3 - 1))
         Activity.objects.create(company=company, actor_email=user.email, resource="orders", record_id=sale.pk,
             summary="Demo workspace ready: contacts, pipeline, orders, stock, invoices, and projects")
-        self.stdout.write(self.style.SUCCESS("Created KERP Demo. Reload KERP and select it in Working in. Existing companies and passwords were preserved."))
+        if options["dry_run"]:
+            counts = self.summary(company)
+            transaction.set_rollback(True)
+            self.stdout.write(f"Dry run passed; no records were committed. Planned counts: {counts}")
+            return
+        self.stdout.write(self.style.SUCCESS("Created Odoo Demo. Reload KERP and select it in Working in. Existing companies and passwords were preserved."))

@@ -7,15 +7,15 @@ from django.utils import timezone
 
 from apps.companies.access import membership_for
 from apps.core.api import APIError, api, json_body
-from .inventory import adjustment, correct_movement, receive_purchase
-from .models import Order, Product, PurchaseReceipt, StockMovement
+from .inventory import adjustment, correct_movement, create_customer_return, create_delivery, create_transfer, decide_customer_return, operation_data, receive_purchase, release_reservations, reserve_sale, validate_delivery, validate_transfer
+from .models import CustomerReturn, Order, Product, PurchaseReceipt, StockLocation, StockMovement, StockOperation, StockReservation, StockTransfer
 from .services import ZERO, date_value, scoped, stock_for, write_access
 from .views import order_data, page
 
 
 def movement_queryset(company_id):
     return StockMovement.objects.filter(company_id=company_id).select_related(
-        "product", "order", "receipt", "reversal",
+        "product", "order", "receipt", "reversal", "source_location", "destination_location",
     ).annotate(returned_quantity=Sum("returns__quantity"))
 
 
@@ -31,6 +31,9 @@ def movement_data(item):
             "receipt_id": item.receipt_id, "receipt_number": item.receipt.number if item.receipt_id else "",
             "receipt_notes": item.receipt.notes if item.receipt_id else "",
             "request_id": item.request_id, "kind": kind, "return_of_id": item.return_of_id,
+            "source_location_id": item.source_location_id, "source_location_code": item.source_location.code,
+            "destination_location_id": item.destination_location_id, "destination_location_code": item.destination_location.code,
+            "location_inferred": item.location_inferred,
             "reversal_of_id": item.reversal_of_id, "reversed_by_id": reversal.pk if reversal else None,
             "returnable_quantity": returnable, "can_reverse": kind == "adjustment" and not reversal and item.quantity != 0,
             "created_at": item.created_at, "actor_email": item.actor_email}
@@ -63,6 +66,111 @@ def receipts(request, company_id, record_id):
 
 
 @api(["GET", "POST"])
+def reservations(request, company_id, record_id):
+    membership_for(request.user, company_id)
+    if request.method == "GET":
+        order = scoped(Order, company_id, record_id)
+        rows = StockReservation.objects.filter(company_id=company_id, order_line__order=order).select_related("product")
+        return page(request, rows, lambda item: {"id": item.pk, "order_line_id": item.order_line_id,
+            "product_id": item.product_id, "location_id": item.location_id, "operation_id": item.operation_id,
+            "quantity": item.quantity, "state": item.state, "request_id": item.request_id})
+    with transaction.atomic():
+        write_access(request.user, company_id)
+        order = scoped(Order, company_id, record_id)
+        rows, created = reserve_sale(order, request.user, json_body(request, {"lines", "request_id"}))
+        return JsonResponse({"reservations": [{"id": item.pk, "order_line_id": item.order_line_id,
+            "product_id": item.product_id, "location_id": item.location_id, "quantity": item.quantity,
+            "state": item.state} for item in rows], "replayed": not created}, status=201 if created else 200)
+
+
+@api(["POST"])
+def release_reservation(request, company_id, record_id):
+    with transaction.atomic():
+        write_access(request.user, company_id)
+        order = scoped(Order, company_id, record_id)
+        rows, changed = release_reservations(order, request.user, json_body(request, {"request_id"}))
+        return JsonResponse({"reservations": [{"id": row.pk, "state": row.state} for row in rows], "replayed": not changed})
+
+
+@api(["GET", "POST"])
+def operations(request, company_id, record_id):
+    membership_for(request.user, company_id)
+    if request.method == "GET":
+        order = scoped(Order, company_id, record_id)
+        return page(request, StockOperation.objects.filter(company_id=company_id, order=order).prefetch_related("lines"), operation_data)
+    with transaction.atomic():
+        write_access(request.user, company_id)
+        order = scoped(Order, company_id, record_id)
+        operation, created = create_delivery(order, request.user, json_body(request, {"request_id"}))
+        return JsonResponse({"operation": operation_data(operation), "replayed": not created}, status=201 if created else 200)
+
+
+@api(["POST"])
+def operation_action(request, company_id, record_id):
+    with transaction.atomic():
+        write_access(request.user, company_id)
+        operation = scoped(StockOperation, company_id, record_id)
+        data = json_body(request, {"action", "lines"})
+        if data.get("action") != "validate":
+            raise APIError("Choose validate.")
+        operation, created, backorder = validate_delivery(operation, request.user, data)
+        return JsonResponse({"operation": operation_data(operation), "backorder": operation_data(backorder) if backorder else None,
+                             "replayed": not created})
+
+
+def transfer_data(item):
+    return {"id": item.pk, "number": item.number, "status": item.status, "source_location_id": item.source_location_id,
+            "destination_location_id": item.destination_location_id, "request_id": item.request_id,
+            "lines": [{"id": line.pk, "product_id": line.product_id, "quantity": line.quantity, "done_quantity": line.done_quantity} for line in item.lines.all()]}
+
+
+@api(["GET", "POST"])
+def transfers(request, company_id):
+    membership_for(request.user, company_id)
+    if request.method == "GET": return page(request, StockTransfer.objects.filter(company_id=company_id).prefetch_related("lines"), transfer_data)
+    with transaction.atomic():
+        write_access(request.user, company_id)
+        item, created = create_transfer(company_id, request.user, json_body(request, {"source_location_id", "destination_location_id", "lines", "request_id"}))
+        return JsonResponse({"transfer": transfer_data(item), "replayed": not created}, status=201 if created else 200)
+
+
+@api(["POST"])
+def transfer_action(request, company_id, record_id):
+    with transaction.atomic():
+        write_access(request.user, company_id); item = scoped(StockTransfer, company_id, record_id)
+        data = json_body(request, {"action", "lines"})
+        if data.get("action") != "validate": raise APIError("Choose validate.")
+        item, created = validate_transfer(item, request.user, data)
+        return JsonResponse({"transfer": transfer_data(item), "replayed": not created})
+
+
+def customer_return_data(item):
+    return {"id": item.pk, "number": item.number, "order_id": item.order_id, "status": item.status, "reason": item.reason,
+            "restockable": item.restockable, "lines": [{"id": line.pk, "order_line_id": line.order_line_id,
+            "delivery_movement_id": line.delivery_movement_id, "quantity": line.quantity, "movement_id": line.movement_id} for line in item.lines.all()]}
+
+
+@api(["GET", "POST"])
+def customer_returns(request, company_id, record_id):
+    membership_for(request.user, company_id); order = scoped(Order, company_id, record_id)
+    if request.method == "GET": return page(request, CustomerReturn.objects.filter(company_id=company_id, order=order).prefetch_related("lines"), customer_return_data)
+    with transaction.atomic():
+        write_access(request.user, company_id)
+        item, created = create_customer_return(order, request.user, json_body(request, {"request_id", "reason", "restockable", "lines"}))
+        return JsonResponse({"return": customer_return_data(item), "replayed": not created}, status=201 if created else 200)
+
+
+@api(["POST"])
+def customer_return_action(request, company_id, record_id):
+    with transaction.atomic():
+        write_access(request.user, company_id); item = scoped(CustomerReturn, company_id, record_id)
+        data = json_body(request, {"action"})
+        if data.get("action") not in ("approve", "reject"): raise APIError("Choose approve or reject.")
+        item, changed = decide_customer_return(item, request.user, data["action"] == "approve")
+        return JsonResponse({"return": customer_return_data(item), "replayed": not changed})
+
+
+@api(["GET", "POST"])
 def stock(request, company_id):
     membership_for(request.user, company_id)
     if request.method == "GET":
@@ -71,6 +179,9 @@ def stock(request, company_id):
             queryset = queryset.filter(product=scoped(Product, company_id, request.GET["product_id"]))
         if request.GET.get("order_id"):
             queryset = queryset.filter(order=scoped(Order, company_id, request.GET["order_id"]))
+        if request.GET.get("location_id"):
+            location = scoped(StockLocation, company_id, request.GET["location_id"])
+            queryset = queryset.filter(Q(source_location=location) | Q(destination_location=location))
         query = request.GET.get("q", "").strip()[:200]
         if query:
             queryset = queryset.filter(Q(product__name__icontains=query) | Q(product__sku__icontains=query) |

@@ -53,6 +53,12 @@ manual journals, opening balances, valuation and localization remain separate.
 - Add product variants, images, barcode scanning, unit conversions, discounts, and pricelists.
 - Add record history, attachments, XLSX/document import/export, and date-filtered reports.
 
+The partial-fulfillment work has an approved-for-review design only, not an
+implementation: [sales/inventory partial-fulfillment plan](SALES-INVENTORY-PARTIAL-FULFILLMENT-PLAN.md)
+and its [proof report](testing/SALES-INVENTORY-PARTIAL-FULFILLMENT-PROOF.md). Do
+not promote these roadmap items until their migration, API, concurrency and browser
+acceptance evidence exists.
+
 ### 2. Deepen accounting and choose localization
 
 The [accounting foundation](ACCOUNTING-INTEGRATION.md) supplies a fixed chart,

@@ -12,6 +12,8 @@ The [E2E/parity verification pass](E2E-PARITY.md), dated 2026-10-29,
 rechecks these statuses against the current API/browser evidence and adds a
 repeatable Markdown/CSV consistency check. Original audit counts remain historical.
 
+The [Inventory V2 INV-01 milestone](INVENTORY-V2-INV-01.md) adds warehouses and locations while keeping the compound transfer/reservation capability Partial.
+
 ## Comparison baseline
 
 The comparison uses **Odoo 19.0 documented capabilities** and the official editions page as references. It is an inclusive planning checklist: it is **not** a claim that every row belongs to Community Edition. Enterprise-dependent apps need an edition decision before implementation. Odoo 19 is a fixed reference here, not a claim about the latest release. No Odoo instance, Enterprise account, license entitlement, or Odoo source checkout was available for executable differential testing.
@@ -29,7 +31,7 @@ KERP is Django + Vue + MySQL, not an Odoo module distribution. This matrix audit
 
 P1 = stabilize the commercial core or satisfy a release gate; P2 = deepen existing apps; P3 = additional app scope. Priorities are proposed sequencing, not effort estimates or incident severity. Audit finding severity is defined separately in the audit report.
 
-**Selected checklist totals:** 74 rows: 25 Implemented, 27 Partial, 22 Missing, 0 Defect. These are capability counts, **not a parity percentage**. The six originally defective rows now have verified fixes; the historical audit records the original five findings.
+**Selected checklist totals:** 74 rows: 25 Implemented, 28 Partial, 21 Missing, 0 Defect. These are capability counts, **not a parity percentage**. The six originally defective rows now have verified fixes; the historical audit records the original five findings.
 
 A portable spreadsheet copy is [ODOO-PARITY-MATRIX.csv](ODOO-PARITY-MATRIX.csv). Each acceptance cell defines the present boundary or the next observable completion condition.
 
@@ -78,7 +80,7 @@ A portable spreadsheet copy is [ODOO-PARITY-MATRIX.csv](ODOO-PARITY-MATRIX.csv).
 | SA-02 | Confirming the document currently displayed | Implemented | [U3], [U6], [T11] | Dirty forms block confirmation; document versions reject stale saves/transitions and preserve edits until an explicit reload. | P1 | S5 |
 | SA-03 | Confirmed snapshots and immutability | Partial | [B5], [M3], [T4] | Prices, party details and lines freeze; add seller/legal fields and unit snapshots for fuller document depth. | P1 | S5 |
 | SA-04 | Confirmed order to full delivery | Implemented | [B6], [T5] | Full goods delivery and service completion work; partial delivery is a separate missing capability. | P1 | S5 |
-| SA-05 | Partial deliveries, backorders, invoiced quantities | Missing | [M3], [B6], [M5] | Track ordered/delivered/invoiced quantities per line and permit multiple partial documents. | P1 | S5 |
+| SA-05 | Partial deliveries, backorders, invoiced quantities | Missing | [M3], [B6], [M5] | Track ordered/delivered/invoiced quantities per line and permit multiple partial documents. A reviewed implementation plan exists; no feature code or acceptance evidence exists yet. | P1 | S5 |
 | SA-06 | Sales/purchase cancellation and reversal | Partial | [B7] | Current cancellation stops before fulfillment/invoicing; add stock/accounting-safe reversal workflows. | P1 | S7 |
 | SA-07 | Customer portal, quotation email/signature | Missing | [R1], [R2] | Add explicit portal authentication, document sharing, delivery tracking, and signature states. | P2 | S5 |
 | PU-01 | RFQ to purchase, receipt, and vendor bill | Implemented | [B5], [B8], [T12] | RFQs confirm, receive goods in parts, and create full-order vendor bills; API/browser checks cover the workflow. | P1 | S4 |
@@ -89,9 +91,9 @@ A portable spreadsheet copy is [ODOO-PARITY-MATRIX.csv](ODOO-PARITY-MATRIX.csv).
 
 | ID | Capability | Status | Repository evidence | Current boundary / next acceptance condition | Priority | Odoo reference |
 | --- | --- | --- | --- | --- | --- | --- |
-| IN-01 | Stock movement ledger and on-hand balance | Implemented | [M6], [T12] | Search/type/product/order/date filters trace immutable movements; retry-safe adjustments and linked reversals preserve stock history. One stock pool per company. | P1 | S4 |
+| IN-01 | Stock movement ledger and on-hand balance | Implemented | [M6], [T12] | Search/type/product/order/date filters trace immutable movements; retry-safe adjustments and linked reversals preserve stock history. Signed company balances are retained; movements now carry source/destination location links (INV-01). | P1 | S4 |
 | IN-02 | No-negative-stock and concurrent deliveries | Implemented | [B1], [B6], [T5] | Current full-delivery rule is protected by a company lock; it is KERP's policy, not universal Odoo configuration parity. | P1 | S4 |
-| IN-03 | Warehouses, locations, transfers, reservations | Missing | [M6] | Represent stock by location and reserve/transfer quantities with concurrency tests. | P1 | S4 |
+| IN-03 | Warehouses, locations, transfers, reservations | Partial | [M13], [B18], [U10], [T15] | Company-scoped reservation, partial delivery/backorder, and internal transfer APIs now write auditable stock records. Customer return approval can restock or retain damaged goods outside stock. Vue workflow and browser evidence remain pending. | P1 | S4 |
 | IN-04 | Lots, serials, expiry, and scanning | Missing | [M2], [M6] | Add traceable receipt/delivery quantities, unique serial rules, and barcode workflows. | P2 | S8 |
 | IN-05 | Replenishment rules | Partial | [M2], [B10] | A threshold and dashboard count exist; add min/max, routes, and suggested/automatic orders. | P2 | S9 |
 | IN-06 | Inventory costing and valuation | Missing | [M6], [M2] | A product cost is not valuation; add cost layers, accounting links, and reconciliation. | P1 | S4 |
@@ -100,7 +102,7 @@ A portable spreadsheet copy is [ODOO-PARITY-MATRIX.csv](ODOO-PARITY-MATRIX.csv).
 
 | ID | Capability | Status | Repository evidence | Current boundary / next acceptance condition | Priority | Odoo reference |
 | --- | --- | --- | --- | --- | --- | --- |
-| FI-01 | Customer invoices and vendor bills | Partial | [M5], [B8] | Order-based creation works; add standalone documents and multiple invoices per order. | P1 | S10 |
+| FI-01 | Customer invoices and vendor bills | Partial | [M5], [B8] | Order-based creation supports delivered partial allocations and immutable invoice-line snapshots. Standalone documents and Vue/browser workflow evidence remain pending. | P1 | S10 |
 | FI-02 | Issuing the invoice currently displayed | Implemented | [U4], [U6], [T6] | Dirty invoices/bills block issue until Save or Discard; saved dates, due dates and notes are retained. | P1 | S10 |
 | FI-03 | Manual partial/full payment recording | Implemented | [B11], [T4] | Bank/cash records and remaining-balance checks work; no external payment is executed. | P1 | S10 |
 | FI-04 | Payment retry without duplicate financial rows | Implemented | [B11], [T5] | UUID retries preserve one payment even concurrently; completion-activity correctness is verified separately in FI-05. | P1 | S10 |
@@ -220,6 +222,11 @@ The bracketed evidence keys are plain labels. The adjacent links resolve to the 
 - [B17]: scoped service rules/APIs, [operations.py](../backend/apps/business/operations.py), [operations_views.py](../backend/apps/business/operations_views.py), work-directory [catalog.py](../backend/apps/business/catalog.py).
 - [U9]: employee directory, [CatalogView.vue](../frontend/src/views/CatalogView.vue), [TimesheetsView.vue](../frontend/src/views/TimesheetsView.vue), [HelpdeskView.vue](../frontend/src/views/HelpdeskView.vue).
 - [T14]: service API acceptance tests, [test_operations.py](../backend/apps/business/test_operations.py), concurrent daily-limit/retry/review/task tests [test_concurrency.py](../backend/apps/business/test_concurrency.py), browser owner/member workflows [browser-service-operations-flow.mjs](../scripts/browser-service-operations-flow.mjs).
+
+- [M13]: company warehouse/location models and protected movement endpoints, [models.py](../backend/apps/business/models.py), additive [schema migration](../backend/apps/business/migrations/0007_warehouse_location_schema.py), [in-place backfill](../backend/apps/business/migrations/0008_assign_legacy_stock_locations.py).
+- [B18]: locked inventory configuration and endpoint assignment, [locations.py](../backend/apps/business/locations.py), scoped archive-only [APIs](../backend/apps/business/location_views.py).
+- [U10]: warehouse/location list, form and hierarchy, [InventoryStructureView.vue](../frontend/src/views/InventoryStructureView.vue), endpoint-aware [StockView.vue](../frontend/src/views/StockView.vue).
+- [T15]: INV-01 API and real migration acceptance, [test_warehouse_locations.py](../backend/apps/business/test_warehouse_locations.py), browser owner/member forms in [workspace.spec.ts](../frontend/tests/e2e/workspace.spec.ts). See [INV-01 verification](testing/INV-01-VERIFICATION.md).
 
 ## Official Odoo references
 

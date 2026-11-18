@@ -20,6 +20,7 @@ class BusinessWorkflowTests(TestCase):
         CompanyMembership.objects.create(company=cls.company, user=cls.member)
         cls.contact = Contact.objects.create(company=cls.company, name="Customer and supplier", is_supplier=True)
         cls.product = Product.objects.create(company=cls.company, name="Desk", sku="DESK", sale_price="19.99", cost_price="10.00")
+        cls.service_product = Product.objects.create(company=cls.company, name="Installation", sku="INSTALL", kind="service", sale_price="19.99", cost_price="10.00")
         cls.foreign_contact = Contact.objects.create(company=cls.other, name="Private")
         cls.foreign_product = Product.objects.create(company=cls.other, name="Private", sku="PRIVATE")
 
@@ -48,7 +49,7 @@ class BusinessWorkflowTests(TestCase):
         return self.request("post", f"orders/{order_id}/actions/", {"action": action}, status)
 
     def create_invoice(self, kind="sale"):
-        order = self.create_order(kind)
+        order = self.create_order(kind, lines=[{"product_id": self.service_product.pk, "quantity": "2", "unit_price": "19.99", "tax_rate": "7.00"}])
         self.action(order["id"], "confirm")
         return self.action(order["id"], "invoice")
 
@@ -69,7 +70,7 @@ class BusinessWorkflowTests(TestCase):
         self.request("post", "contacts/", {"name": "Bad", "email": "invalid"}, 400)
         self.request("post", "contacts/", {"name": "Bad", "company_id": self.other.pk}, 400)
         self.request("post", "contacts/", {"name": "Bad", "is_active": "false"}, 400)
-        self.assertEqual(Product.objects.filter(company=self.company).count(), 1)
+        self.assertEqual(Product.objects.filter(company=self.company).count(), 2)
 
     def test_member_is_read_only_and_inactive_membership_is_rejected(self):
         self.client.force_login(self.member)
@@ -103,7 +104,7 @@ class BusinessWorkflowTests(TestCase):
         self.assertEqual(Decimal(saved["total"]), Decimal("0.32"))
 
     def test_confirmed_order_immutable_and_invalid_transitions(self):
-        order = self.create_order()
+        order = self.create_order(lines=[{"product_id": self.service_product.pk, "quantity": "2", "unit_price": "19.99", "tax_rate": "7.00"}])
         self.action(order["id"], "fulfill", 409)
         self.action(order["id"], "invoice", 409)
         self.action(order["id"], "confirm")
@@ -153,7 +154,7 @@ class BusinessWorkflowTests(TestCase):
         self.assertEqual(Decimal(self.request("get", f"products/{self.product.pk}/")["stock_quantity"]), Decimal("3"))
 
     def test_invoice_creation_is_idempotent_and_cancel_rules_hold(self):
-        order = self.create_order()
+        order = self.create_order(lines=[{"product_id": self.service_product.pk, "quantity": "2", "unit_price": "19.99", "tax_rate": "7.00"}])
         self.action(order["id"], "confirm")
         first = self.action(order["id"], "invoice")
         second = self.action(order["id"], "invoice")
@@ -212,8 +213,9 @@ class BusinessWorkflowTests(TestCase):
         self.assertEqual(Activity.objects.filter(company=self.other).count(), 0)
 
     def test_other_company_document_ids_cannot_be_read_or_mutated(self):
+        service = Product.objects.create(company=self.other, name="Private service", sku="PRIVATE-SERVICE", kind="service")
         order = save_order(self.other.pk, {"kind": "sale", "contact_id": self.foreign_contact.pk,
-                           "lines": [{"product_id": self.foreign_product.pk, "quantity": "1", "unit_price": "50"}]})
+                           "lines": [{"product_id": service.pk, "quantity": "1", "unit_price": "50"}]})
         order.status = "confirmed"
         order.save(update_fields=["status"])
         invoice = invoice_order(order)

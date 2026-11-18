@@ -4,9 +4,14 @@ from . import catalog_transfer
 from . import inventory_views
 from . import accounting_views
 from . import operations_views
+from . import location_views
 
 app_name = "business"
 urlpatterns = [
+    path("warehouses/", location_views.warehouses, name="warehouses"),
+    path("warehouses/<int:record_id>/", location_views.warehouse_item, name="warehouse"),
+    path("locations/", location_views.locations, name="locations"),
+    path("locations/<int:record_id>/", location_views.location_item, name="location"),
     path("helpdesk/", operations_views.tickets, name="helpdesk"),
     path("helpdesk/<int:record_id>/", operations_views.ticket_item, name="ticket"),
     path("helpdesk/<int:record_id>/actions/", operations_views.ticket_actions, name="ticket-actions"),
@@ -25,6 +30,15 @@ urlpatterns = [
     path("orders/<int:record_id>/", views.order_item, name="order"),
     path("orders/<int:record_id>/actions/", views.order_action, name="order-action"),
     path("orders/<int:record_id>/receipts/", inventory_views.receipts, name="receipts"),
+    path("orders/<int:record_id>/reservations/", inventory_views.reservations, name="reservations"),
+    path("orders/<int:record_id>/reservations/release/", inventory_views.release_reservation, name="reservation-release"),
+    path("orders/<int:record_id>/operations/", inventory_views.operations, name="operations"),
+    path("orders/<int:record_id>/invoices/", views.order_invoices, name="order-invoices"),
+    path("operations/<int:record_id>/actions/", inventory_views.operation_action, name="operation-action"),
+    path("transfers/", inventory_views.transfers, name="transfers"),
+    path("transfers/<int:record_id>/actions/", inventory_views.transfer_action, name="transfer-action"),
+    path("orders/<int:record_id>/returns/", inventory_views.customer_returns, name="customer-returns"),
+    path("returns/<int:record_id>/actions/", inventory_views.customer_return_action, name="customer-return-action"),
     path("invoices/", views.invoices, name="invoices"),
     path("invoices/<int:record_id>/", views.invoice_item, name="invoice"),
     path("invoices/<int:record_id>/actions/", views.invoice_action, name="invoice-action"),

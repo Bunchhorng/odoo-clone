@@ -1,8 +1,9 @@
 # Project completion report
 
-Review date: **2026-10-29, Asia/Bangkok**. Project: **KERP**, Django + Vue + MySQL.
-Reviewed committed base: `7c36424`, plus the current modified and untracked feature
-files. This report describes the working directory, not a clean release checkout.
+Review date: **2026-11-11, Asia/Bangkok**. Project: **KERP**, Django + Vue + MySQL.
+Reviewed committed base: `4e0e695`, plus the current modified and untracked
+warehouse/location feature files. This report describes the working directory, not
+a clean release checkout.
 
 ## Overall assessment
 
@@ -16,10 +17,10 @@ The selected capability checklist contains **74 items**:
 | State | Count | Meaning |
 | --- | ---: | --- |
 | Complete within the named scope | 25 | Implemented capabilities with source and automated-test evidence |
-| Partially complete | 27 | Working functionality exists, with specific missing behavior |
-| Not implemented | 22 | The corresponding workflow is absent in the reviewed implementation |
+| Partially complete | 28 | Working functionality exists, with specific missing behavior |
+| Not implemented | 21 | The corresponding workflow is absent in the reviewed implementation |
 | Recorded reproduced defects | 0 | No open Defect rows in this checklist; this does not prove the absence of all bugs |
-| Total unfinished | 49 | 27 partial + 22 missing capabilities |
+| Total unfinished | 49 | 28 partial + 21 missing capabilities |
 
 These counts are not a completion percentage. The checklist is a selected scope,
 not an exhaustive inventory of every ERP feature. The detailed acceptance
@@ -32,7 +33,7 @@ boundaries are maintained in [the parity matrix](ODOO-PARITY-MATRIX.md) and its
 | Contacts and products | 3 | 3 | 2 | 8 |
 | CRM | 2 | 1 | 1 | 4 |
 | Sales and purchase | 4 | 3 | 3 | 10 |
-| Inventory | 2 | 1 | 3 | 6 |
+| Inventory | 2 | 2 | 2 | 6 |
 | Invoicing, payments, and accounting | 5 | 7 | 2 | 14 |
 | Projects and reporting | 1 | 4 | 2 | 7 |
 | Engineering and operations | 2 | 3 | 2 | 7 |
@@ -49,7 +50,7 @@ visible application. "Delivered" refers only to the behavior in that column.
 | App launcher and shared UI | Fourteen app entries, application search, navigation, reusable fields/dialogs/tables, dirty-form guards, responsive layouts | Configurable app installation, custom fields, translations, broader accessibility verification |
 | Contacts | Customer/supplier records, filtering/search, cards/lists, sorting, archive/restore, validated CSV import/export | Contact/address hierarchy, merging duplicates, full linked history, attachments, XLSX |
 | CRM | Five-stage pipeline, revenue/probability, stage changes, customer links, quotations prefilled from opportunities, quotation counts and navigation | Configurable stages/teams, activities/calendar, lead capture/assignment, automation |
-| Products / Inventory | SKU and goods/service catalog, categories, stored barcodes, prices/costs, stock balances, filtered movements, retry-safe adjustments/reversals, protected full deliveries | Variants/images/scanning, unit conversions, warehouses/locations, reservations/transfers, serial/lot tracking, stock valuation |
+| Products / Inventory | SKU and goods/service catalog, categories, stored barcodes, prices/costs, stock balances, filtered movements, retry-safe adjustments/reversals, protected full deliveries; company warehouses, validated location hierarchy and inferred historical movement endpoints | Variants/images/scanning, unit conversions, transfers/reservations, serial/lot tracking and stock valuation; additional warehouses are configuration-only until routing is added |
 | Sales | Quotation editing, server decimal totals/taxes, document versions, confirmation, full delivery, order-based invoice creation | Partial delivery/backorders, partial invoicing, discounts/pricelists, approvals, quotation email/signature, customer portal, post-fulfillment returns |
 | Purchase | RFQs, supplier costs, confirmation, numbered partial/full receipts, received/remaining quantities, supplier returns for replacement, vendor bills | Vendor price agreements, approval/tender workflows, three-way matching, partial bills, permanent-return credits |
 | Invoicing | Order-based invoices/bills, snapshots, issue/cancel, unpaid cancellation correction/reissue, due dates, manual partial/full payments, duplicate-payment prevention, browser printing | Standalone/multiple invoices, credit notes/refunds, payment reversals, generated PDF validation, payment gateway integration, legal/e-invoice formats |
@@ -79,7 +80,7 @@ security incident severity or estimated effort.
 
 ### P1: commercial depth and release gates — 21 items
 
-Fourteen partial capabilities and seven missing capabilities.
+Fifteen partial capabilities and six missing capabilities.
 
 | ID | State | Capability | Current boundary / remaining work |
 | --- | --- | --- | --- |
@@ -89,7 +90,7 @@ Fourteen partial capabilities and seven missing capabilities.
 | SA-05 | Missing | Partial deliveries, backorders, invoiced quantities | Track ordered/delivered/invoiced quantities per line and permit multiple partial documents. |
 | SA-06 | Partial | Sales/purchase cancellation and reversal | Current cancellation stops before fulfillment/invoicing; add stock/accounting-safe reversal workflows. |
 | PU-03 | Partial | Partial receipts, vendor returns, matching | Numbered partial receipts, per-line net quantities and supplier returns for replacement work; three-way matching, partial billing and return credits remain. |
-| IN-03 | Missing | Warehouses, locations, transfers, reservations | Represent stock by location and reserve/transfer quantities with concurrency tests. |
+| IN-03 | Partial | Warehouses, locations, transfers, reservations | INV-01 adds company warehouses, validated location hierarchies and in-place historical movement endpoints. Existing APIs post through the default warehouse; transfers, reservations and partial sales deliveries remain out of scope. |
 | IN-06 | Missing | Inventory costing and valuation | A product cost is not valuation; add cost layers, accounting links, and reconciliation. |
 | FI-01 | Partial | Customer invoices and vendor bills | Order-based creation works; add standalone documents and multiple invoices per order. |
 | FI-06 | Partial | Credit notes, refunds, and reversals | Unpaid invoice cancellation creates a linked reversing journal entry; credit notes, refunds and payment reversals remain missing. |
@@ -182,15 +183,15 @@ clean checkout before another machine can reproduce this exact application.
 
 | Evidence | Result | When / scope |
 | --- | --- | --- |
-| Current Compose services | Database, backend and frontend healthy; mailer running | Rechecked for this report |
-| Django system check | Passed, no issues | Rechecked for this report |
-| Model/migration consistency | Passed, no changes detected | Rechecked for this report |
-| Django deployment check | Five warnings listed above | Rechecked for this report |
-| Parity-record consistency | Passed: 74 matching rows and 64 referenced local files | Rechecked for this report; checks documentation consistency/file presence |
-| Backend suite | 177 tests passed | Earlier E2E/parity pass in this conversation; includes isolated MySQL and concurrency tests |
-| Browser E2E | 51 workflow groups passed; no uncaught JS errors or Vue warnings; cleanup passed | Run `5cc683be473fd11f`, completed 2026-10-29 at 16:22:48 Asia/Bangkok |
-| Vue production build | Passed | Earlier E2E/parity pass in this conversation |
-| Parity-verifier regressions | Seven tests passed | Earlier E2E/parity pass in this conversation |
+| Current Compose services | Database, backend and frontend healthy; mailer running | Rechecked 2026-11-11 |
+| Django system check | Passed, no issues | Rechecked 2026-11-11 |
+| Model/migration consistency | Passed, no changes detected | Rechecked 2026-11-11 |
+| Django deployment check | Five warnings listed above | Rechecked 2026-11-11 |
+| Parity-record consistency | Passed: 74 matching rows and 74 referenced local files | Rechecked 2026-11-11; checks documentation consistency/file presence |
+| Backend suite | 192 tests passed | INV-01 full-suite evidence, 2026-10-30; includes isolated MySQL and concurrency tests |
+| Browser E2E | 51 workflow groups passed; no uncaught JS errors or Vue warnings; cleanup passed | INV-01 full-suite evidence, completed 2026-10-30 at 23:18 Asia/Bangkok |
+| Vue production build | Passed | Rechecked 2026-11-11 |
+| Parity-verifier regressions | Seven tests passed | Rechecked 2026-11-11 |
 
 The full suites were not rerun merely to create this documentation report. Their
 results are retained in [E2E-PARITY.md](E2E-PARITY.md) and

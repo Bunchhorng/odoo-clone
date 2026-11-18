@@ -1,4 +1,4 @@
-# Odoo Project
+# KERP
 
 A Django, Vue, and MySQL ERP project with an Odoo-style app launcher and connected
 core workflows: contacts, CRM, sales, purchase, inventory, invoices/payments,
@@ -33,9 +33,9 @@ Install and start Docker Desktop. No host Python, Node, or MySQL installation is
 3. Run `docker compose up -d --build`.
 4. Run `docker compose ps`: db/backend/frontend should be healthy and mailer running.
 
-The default application is <http://localhost:5173>. The backend is <http://localhost:8000>,
+The default application is <http://localhost:5175>. The backend is <http://localhost:8000>,
 with administration at `/admin/` and the database-backed health endpoint at
-`/api/v1/health/`. The same health endpoint works through port 5173's API proxy.
+`/api/v1/health/`. The same health endpoint works through port 5175's API proxy.
 
 If port 8000 is already occupied, set `BACKEND_PORT=8001` in `.env` and use
 <http://localhost:8001/admin/> and <http://localhost:8001/api/v1/health/>.
@@ -78,7 +78,7 @@ then run `docker compose exec backend python manage.py createsuperuser --noinput
 Run this once; server startup never creates or resets users. After changing
 environment variables, recreate the backend with `docker compose up -d backend`.
 
-Sign in at <http://localhost:5173/login>, create a company in **Companies**, and
+Sign in at <http://localhost:5175/login>, create a company in **Companies**, and
 open **Team** to add existing user accounts. You become the company's owner.
 Company access is enforced by the API on every request. Staff and superusers also
 need a company membership to use its application APIs.
@@ -97,9 +97,12 @@ To explore a separate sample company with your existing account:
 docker compose exec backend python manage.py seed_demo --email admin@kerp.local
 ```
 
-Replace the email if needed, reload KERP, and select **KERP Demo**. This creates
+Replace the email if needed, reload KERP, and select **Odoo Demo**. This creates
 sample data in its own company and leaves existing companies/passwords unchanged.
-Repeating the command leaves the existing demo unchanged.
+Repeating the command leaves the existing demo unchanged. Verify, preview, or
+remove only that isolated workspace with `--verify`, `--dry-run`, or
+`--reset-demo --confirm-reset`; see [Demo seeders](docs/DEMO-SEEDERS.md). The
+command refuses non-development Django environments.
 
 Source directories are mounted into the development containers. Django reloads
 Python changes and Vite reloads Vue changes. When dependency files change, rebuild

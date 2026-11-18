@@ -10,6 +10,7 @@ from apps.accounts.views import session_data
 from apps.core.api import APIError, api, json_body, text_field
 from .access import company_data, membership_for, memberships_for
 from .models import Company, CompanyMembership
+from .seeding import seed_company, sync_membership_system_groups
 
 
 def member_data(member):
@@ -63,6 +64,7 @@ def companies(request):
         company = Company(name=name, slug=slug)
         company.full_clean()
         company.save()
+        seed_company(company)
         CompanyMembership.objects.create(company=company, user=request.user, role=CompanyMembership.Role.OWNER)
     request.session["active_company_id"] = company.pk
     return JsonResponse(session_data(request), status=201)
@@ -95,6 +97,7 @@ def members(request, company_id):
         if CompanyMembership.objects.filter(company_id=company_id, user=user).exists():
             raise APIError("This account already belongs to the company. Update its existing access instead.", 409)
         member = CompanyMembership.objects.create(company_id=company_id, user=user, role=role)
+        sync_membership_system_groups(member)
         return JsonResponse({"member": member_data(member)}, status=201)
 
 
@@ -126,4 +129,5 @@ def update_member(request, company_id, member_id):
         member.role = role
         member.is_active = active
         member.save(update_fields=["role", "is_active"])
+        sync_membership_system_groups(member)
         return JsonResponse({"member": member_data(member)})

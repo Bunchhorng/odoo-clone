@@ -11,6 +11,9 @@ if not SECRET_KEY or SECRET_KEY.startswith("REPLACE_WITH_"):
     raise ImproperlyConfigured("Set a random DJANGO_SECRET_KEY in the root .env file.")
 
 DEBUG = False
+PERMISSION_MODE = os.environ.get("PERMISSION_MODE", "off")
+if PERMISSION_MODE not in {"off", "log", "enforce"}:
+    raise ImproperlyConfigured("PERMISSION_MODE must be off, log, or enforce.")
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
@@ -96,7 +99,7 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Server-owned origin prevents reset-link host-header poisoning.
-FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:5173").rstrip("/")
+FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "http://localhost:5175").rstrip("/")
 _frontend = urlsplit(FRONTEND_ORIGIN)
 if (_frontend.scheme not in ("http", "https") or not _frontend.netloc or
         _frontend.username or _frontend.password or _frontend.path or _frontend.query or _frontend.fragment):
@@ -106,14 +109,17 @@ PASSWORD_RESET_TIMEOUT = 1800
 AUTH_RATE_WINDOW_SECONDS = int(os.environ.get("AUTH_RATE_WINDOW_SECONDS", "900"))
 AUTH_LOGIN_IDENTITY_LIMIT = int(os.environ.get("AUTH_LOGIN_IDENTITY_LIMIT", "10"))
 AUTH_LOGIN_IP_LIMIT = int(os.environ.get("AUTH_LOGIN_IP_LIMIT", "100"))
+AUTH_REGISTER_IDENTITY_LIMIT = int(os.environ.get("AUTH_REGISTER_IDENTITY_LIMIT", "3"))
+AUTH_REGISTER_IP_LIMIT = int(os.environ.get("AUTH_REGISTER_IP_LIMIT", "20"))
 AUTH_RESET_IDENTITY_LIMIT = int(os.environ.get("AUTH_RESET_IDENTITY_LIMIT", "3"))
 AUTH_RESET_IP_LIMIT = int(os.environ.get("AUTH_RESET_IP_LIMIT", "30"))
 AUTH_RESET_QUEUE_TTL = 900
 for _setting in ("SESSION_COOKIE_AGE", "AUTH_RATE_WINDOW_SECONDS", "AUTH_LOGIN_IDENTITY_LIMIT",
-                 "AUTH_LOGIN_IP_LIMIT", "AUTH_RESET_IDENTITY_LIMIT", "AUTH_RESET_IP_LIMIT"):
+                 "AUTH_LOGIN_IP_LIMIT", "AUTH_REGISTER_IDENTITY_LIMIT", "AUTH_REGISTER_IP_LIMIT",
+                 "AUTH_RESET_IDENTITY_LIMIT", "AUTH_RESET_IP_LIMIT"):
     if globals()[_setting] < 1:
         raise ImproperlyConfigured(f"{_setting} must be positive.")
-DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "Odoo Project <noreply@kerp.local>")
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "KERP <noreply@kerp.local>")
 EMAIL_TIMEOUT = 5
 EMAIL_HOST = os.environ.get("EMAIL_HOST", "localhost")
 EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))

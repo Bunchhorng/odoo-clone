@@ -1,7 +1,9 @@
-/* Odoo Project semantic tokens. Text pairs are checked in tokens.test.ts. */
+/* KERP semantic tokens. Text pairs are checked in tokens.test.ts. */
 :root {
   color-scheme: light;
   --font-sans: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+  /* Display-only: keep dense ERP content in the legible system sans stack. */
+  --font-handwritten: 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive;
   --font-xs: .75rem; --font-sm: .8125rem; --font-base: .875rem; --font-lg: 1rem;
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px;
   --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px; --radius-pill: 999px;
@@ -14,6 +16,10 @@
   --warning: #795208; --warning-bg: #fff4d9;
   --danger: #a12c3a; --danger-bg: #fff0f1;
   --info: #235d89; --info-bg: #eaf3fc;
+  /* Workflow colors are semantic so dashboards and status bars follow both themes. */
+  --progress-neutral: #714b83; --progress-qualified: #246c72;
+  --progress-proposition: #795208; --progress-won: #216342; --progress-lost: #a12c3a;
+  --activity-marker: #714b83;
   --shadow-sm: 0 1px 3px #21162d0a;
   --shadow-menu: 0 12px 40px #21162d24;
   --shadow-modal: 0 24px 80px #160c2940;
@@ -32,6 +38,9 @@
   --warning: #f1d18a; --warning-bg: #3d311a;
   --danger: #ffb4bf; --danger-bg: #482731;
   --info: #acd6f7; --info-bg: #23384a;
+  --progress-neutral: #cda6e4; --progress-qualified: #8ed4d8;
+  --progress-proposition: #f1d18a; --progress-won: #9cdbb3; --progress-lost: #ffb4bf;
+  --activity-marker: #cda6e4;
   --shadow-sm: 0 1px 3px #00000020;
   --shadow-menu: 0 12px 40px #00000055;
   --shadow-modal: 0 24px 80px #00000070;

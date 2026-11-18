@@ -16,6 +16,14 @@ def membership_for(user, company_id):
     return membership
 
 
+def owner_only_for(user, company_id):
+    """Owner-only flag primitive for future endpoint-registry entries."""
+    membership = membership_for(user, company_id)
+    if membership.role != CompanyMembership.Role.OWNER:
+        raise APIError("This operation is restricted to the company owner.", 403)
+    return membership
+
+
 def company_data(membership):
     return {
         "id": membership.company_id,

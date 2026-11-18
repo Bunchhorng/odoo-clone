@@ -2,6 +2,7 @@ from django.conf import settings
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import PasswordChangeForm, SetPasswordForm
+from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
 from django.core.validators import validate_email
 from django.db import transaction
@@ -75,6 +76,31 @@ def sign_in(request):
     login(request, user)
     clear_login_limit(user.email)
     return JsonResponse(session_data(request))
+
+
+@api(["POST"], authenticated=False)
+def sign_up(request):
+    data = json_body(request, {"email", "password", "password_confirmation"})
+    email = get_user_model().objects.normalize_email(text_field(data, "email", maximum=254))
+    validate_email(email)
+    password_fields(data, "password", "password_confirmation")
+    if data["password"] != data["password_confirmation"]:
+        raise APIError("Passwords do not match.")
+    consume_limits([
+        ("register:identity", email.casefold(), settings.AUTH_REGISTER_IDENTITY_LIMIT),
+        ("register:ip", request_ip(request), settings.AUTH_REGISTER_IP_LIMIT),
+    ])
+    with transaction.atomic():
+        User = get_user_model()
+        if User.objects.filter(email__iexact=email).exists():
+            raise APIError("An account with this email already exists.", 409)
+        user = User(email=email, is_active=True)
+        validate_password(data["password"], user)
+        user.set_password(data["password"])
+        user.save()
+    login(request, user)
+    clear_login_limit(user.email)
+    return JsonResponse(session_data(request), status=201)
 
 
 @api(["POST"])

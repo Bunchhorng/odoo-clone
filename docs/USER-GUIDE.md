@@ -17,7 +17,7 @@ docker compose exec backend python manage.py createsuperuser
 Enter an email and a strong password when prompted. No default password is shipped.
 If you already have an account, use it; do not run this command again for it.
 
-Open <http://localhost:5173/login> and sign in with that email and password.
+Open <http://localhost:5175/login> and sign in with that email and password.
 The account does not need Django staff permission to use KERP. Staff permission
 is needed only to enter Django Admin.
 

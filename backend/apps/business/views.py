@@ -6,14 +6,16 @@ from django.http import JsonResponse
 from django.utils import timezone
 
 from apps.companies.access import membership_for
+from apps.companies.permission_audit import PermissionImpact, permission_enforced
+from apps.companies.permissions import resolve_effective_access
 from apps.core.api import APIError, api, json_body, text_field
 from .catalog import catalog_data, catalog_queryset, definition, filtered_catalog, save_catalog
 from .accounting import active_invoice_entry, post_invoice, reverse_invoice
 from .inventory import purchase_lines
-from .models import Activity, Contact, Invoice, Opportunity, Order, Payment, Product, Project, Task, TimesheetEntry, WorkspaceSettings
+from .models import Activity, Contact, Invoice, InvoiceLine, Opportunity, Order, Payment, Product, Project, Task, TimesheetEntry, WorkspaceSettings, StockReservation
 from .services import (
     check_version, currency_for, date_value, fulfill_order, invoice_order,
-    paid_for, record_activity, register_payment, save_order, scoped, write_access,
+    paid_for, record_activity, register_payment, save_order, scoped, write_access, invoiceable_quantities,
 )
 
 
@@ -37,7 +39,7 @@ def order_data(item, detail=False):
         "id", "kind", "number", "contact_id", "contact_name", "contact_email", "contact_address", "currency",
         "date", "status", "notes", "subtotal", "tax_total", "total", "fulfilled_at", "created_at", "updated_at", "version", "opportunity_id",
     )}
-    invoice = getattr(item, "invoice", None)
+    invoice = item.invoices.order_by("-id").first()
     data["invoice_id"] = invoice.pk if invoice else None
     data["opportunity_title"] = item.opportunity.title if item.opportunity_id else ""
     data["has_stock_movements"] = bool(item.movement_count) if hasattr(item, "movement_count") else item.movements.exists()
@@ -50,11 +52,25 @@ def order_data(item, detail=False):
             "total": invoice.total, "paid": paid_for(invoice),
             "balance": invoice.total - paid_for(invoice) if invoice.status != "cancelled" else Decimal("0"),
             "journal_entry_count": invoice.journal_entries.count()} if invoice else None)
+        data["invoice_count"] = item.invoices.count()
         if item.kind == "purchase":
             progress = {line.pk: line.received_quantity for line in purchase_lines(item)}
             for line in data["lines"]:
                 line["received_quantity"] = progress.get(line["id"], Decimal("0"))
                 line["remaining_quantity"] = line["quantity"] - progress[line["id"]] if line["id"] in progress else Decimal("0")
+        elif item.kind == "sale":
+            reserved = {row["order_line_id"]: row["value"] for row in StockReservation.objects.filter(
+                order_line__order=item, state="active").values("order_line_id").annotate(value=Sum("quantity"))}
+            delivered = {row["order_line_id"]: -row["value"] for row in item.movements.filter(quantity__lt=0).values(
+                "order_line_id").annotate(value=Sum("quantity"))}
+            invoiced = {row["order_line_id"]: row["value"] for row in InvoiceLine.objects.filter(invoice__order=item).
+                exclude(invoice__status="cancelled").values("order_line_id").annotate(value=Sum("quantity"))}
+            for line in data["lines"]:
+                line["reserved_quantity"] = reserved.get(line["id"], Decimal("0"))
+                line["delivered_quantity"] = delivered.get(line["id"], Decimal("0"))
+                line["invoiced_quantity"] = invoiced.get(line["id"], Decimal("0"))
+                line["remaining_quantity"] = line["quantity"] - line["delivered_quantity"]
+            data["operation_count"] = item.stock_operations.count()
     return data
 
 
@@ -71,7 +87,10 @@ def invoice_data(item, detail=False):
     data["paid_amount"] = paid_for(item)
     data["balance"] = item.total - data["paid_amount"] if item.status != "cancelled" else Decimal("0")
     if detail:
-        data["lines"] = [line_data(line) for line in item.order.lines.all()]
+        data["lines"] = [{"id": line.pk, "order_line_id": line.order_line_id, "quantity": line.quantity,
+                          "description": line.description, "unit_price": line.unit_price, "tax_rate": line.tax_rate,
+                          "subtotal": line.subtotal, "tax_total": line.tax_total, "total": line.total}
+                         for line in item.lines.all()]
         data["payments"] = [{key: getattr(payment, key) for key in ("id", "amount", "date", "method", "reference", "request_id")} for payment in item.payments.all()]
         data["journal_entry_count"] = item.journal_entries.count()
         data["opportunity_id"] = item.order.opportunity_id
@@ -112,15 +131,27 @@ def catalog_item(request, company_id, resource, record_id):
 def orders(request, company_id):
     membership_for(request.user, company_id)
     if request.method == "GET":
-        queryset = Order.objects.filter(company_id=company_id).select_related("invoice", "opportunity").annotate(received_total=Sum("movements__quantity"), movement_count=Count("movements"))
+        queryset = Order.objects.filter(company_id=company_id).select_related("opportunity").annotate(received_total=Sum("movements__quantity"), movement_count=Count("movements"))
         if request.GET.get("opportunity_id"):
             queryset = queryset.filter(opportunity=scoped(Opportunity, company_id, request.GET["opportunity_id"]))
-        if request.GET.get("kind"):
-            queryset = queryset.filter(kind=request.GET["kind"])
+        kind = request.GET.get("kind")
+        if kind:
+            queryset = queryset.filter(kind=kind)
         if request.GET.get("status"):
             queryset = queryset.filter(status=request.GET["status"])
         if request.GET.get("q"):
             queryset = queryset.filter(Q(number__icontains=request.GET["q"][:200]) | Q(contact_name__icontains=request.GET["q"][:200]))
+        if not kind:
+            def order_impact():
+                access = resolve_effective_access(request.user, company_id)
+                visible_kinds = tuple(kind for kind, app_key in (("sale", "sales"), ("purchase", "purchase"))
+                                      if access.allows(app_key, "read"))
+                if len(visible_kinds) == 2:
+                    return None
+                return PermissionImpact("no_app_access", queryset.exclude(kind__in=visible_kinds).count(), visible_kinds)
+            impact = permission_enforced(request, company_id, order_impact)
+            if impact:
+                queryset = queryset.filter(kind__in=impact.value)
         return page(request, queryset, order_data)
     with transaction.atomic():
         write_access(request.user, company_id)
@@ -159,10 +190,8 @@ def order_action(request, company_id, record_id):
                 (action == "cancel" and order.status == "cancelled") or
                 (action == "fulfill" and order.fulfilled_at)):
             return JsonResponse(order_data(order, True))
-        if action == "invoice":
-            existing = Invoice.objects.filter(order=order).first()
-            if existing:
-                return JsonResponse(invoice_data(existing, True))
+        if action == "invoice" and Invoice.objects.filter(order=order).exists() and not any(value > 0 for value in invoiceable_quantities(order).values()):
+            return JsonResponse(invoice_data(Invoice.objects.filter(order=order).order_by("-id").first(), True))
         check_version(order, data)
         if action == "confirm":
             if order.status == "cancelled":
@@ -190,6 +219,22 @@ def order_action(request, company_id, record_id):
             raise APIError("Choose confirm, cancel, fulfill, or invoice.")
         record_activity(request.user, company_id, "orders", order, f"{action.capitalize()}: {order.number}")
         return JsonResponse(order_data(order, True))
+
+
+@api(["GET", "POST"])
+def order_invoices(request, company_id, record_id):
+    membership_for(request.user, company_id)
+    order = scoped(Order, company_id, record_id)
+    if request.method == "GET":
+        return page(request, Invoice.objects.filter(company_id=company_id, order=order), invoice_data)
+    with transaction.atomic():
+        write_access(request.user, company_id)
+        data = json_body(request, {"lines", "request_id"})
+        existed = Invoice.objects.filter(request_id=data.get("request_id")).exists() if data.get("request_id") else False
+        invoice = invoice_order(order, data)
+        if not existed:
+            record_activity(request.user, company_id, "invoices", invoice, f"Prepared {invoice.number} from {order.number}")
+        return JsonResponse(invoice_data(invoice, True), status=200 if existed else 201)
 
 
 @api(["GET"])
@@ -294,34 +339,85 @@ def workspace_settings(request, company_id):
         return JsonResponse({"currency": item.currency, "currency_locked": Order.objects.filter(company_id=company_id).exists()})
 
 
-@api(["GET"])
-def dashboard(request, company_id):
-    actor = membership_for(request.user, company_id)
+DASHBOARD_RESOURCE_APPS = {
+    "contacts": "contacts", "products": "products", "product-categories": "product-categories",
+    "opportunities": "crm", "invoices": "invoicing", "accounting": "accounting",
+    "timesheets": "timesheets", "helpdesk": "helpdesk", "projects": "projects", "tasks": "projects",
+    "stock": "inventory", "warehouses": "inventory", "locations": "inventory",
+}
+
+
+def dashboard_data(request, company_id, actor, access=None):
+    """Build the legacy payload, or its enforce-mode permission-filtered form."""
     activities = Activity.objects.filter(company_id=company_id)
-    if actor.role == "member":
-        own_entries = TimesheetEntry.objects.filter(company_id=company_id, employee__user=request.user).values("id")
-        activities = activities.filter(~Q(resource="timesheets") | Q(resource="timesheets", record_id__in=own_entries))
     orders = Order.objects.filter(company_id=company_id)
     invoices = Invoice.objects.filter(company_id=company_id)
     opportunities = Opportunity.objects.filter(company_id=company_id, is_active=True)
+    tasks = Task.objects.filter(company_id=company_id, is_active=True)
+    products = Product.objects.filter(company_id=company_id, kind="goods", is_active=True).annotate(stock_quantity=Sum("movements__quantity"))
+    if access is not None:
+        visible_order_kinds = tuple(kind for kind, app_key in (("sale", "sales"), ("purchase", "purchase"))
+                                    if access.allows(app_key, "read"))
+        orders = orders.filter(kind__in=visible_order_kinds)
+        visible_invoice_kinds = []
+        if access.allows("invoicing", "read"):
+            visible_invoice_kinds.append("customer")
+        if access.allows("purchase", "read") or access.allows("accounting", "read"):
+            visible_invoice_kinds.append("vendor")
+        invoices = invoices.filter(kind__in=visible_invoice_kinds)
+        opportunities = opportunities if access.allows("crm", "read") else Opportunity.objects.none()
+        products = products if access.allows("inventory", "read") else Product.objects.none()
+        if not access.allows("projects", "read"):
+            tasks = Task.objects.none()
+        elif actor.role == "member":
+            tasks = tasks.filter(assignee=request.user)
+        visible_resources = [resource for resource, app_key in DASHBOARD_RESOURCE_APPS.items() if access.allows(app_key, "read")]
+        activities = activities.filter(Q(resource__in=visible_resources) |
+                                       Q(resource="orders", record_id__in=orders.values("id")))
+    if actor.role == "member":
+        own_entries = TimesheetEntry.objects.filter(company_id=company_id, employee__user=request.user).values("id")
+        activities = activities.filter(~Q(resource="timesheets") | Q(resource="timesheets", record_id__in=own_entries))
     open_invoices = invoices.filter(status="issued").annotate(paid_amount=Sum("payments__amount"))
     receivable = sum((item.total - (item.paid_amount or 0) for item in open_invoices if item.kind == "customer"), Decimal("0"))
     payable = sum((item.total - (item.paid_amount or 0) for item in open_invoices if item.kind == "vendor"), Decimal("0"))
     sales = orders.filter(kind="sale", status="confirmed").aggregate(value=Sum("total"))["value"] or 0
-    products = Product.objects.filter(company_id=company_id, kind="goods", is_active=True).annotate(stock_quantity=Sum("movements__quantity"))
-    data = {
+    return {
         "currency": currency_for(company_id),
-        "contacts": Contact.objects.filter(company_id=company_id, is_active=True).count(),
-        "products": Product.objects.filter(company_id=company_id, is_active=True).count(),
+        "contacts": Contact.objects.filter(company_id=company_id, is_active=True).count() if access is None or access.allows("contacts", "read") else 0,
+        "products": Product.objects.filter(company_id=company_id, is_active=True).count() if access is None or access.allows("products", "read") else 0,
         "open_opportunities": opportunities.exclude(stage__in=["won", "lost"]).count(),
         "pipeline_value": opportunities.exclude(stage__in=["won", "lost"]).aggregate(value=Sum("expected_revenue"))["value"] or 0,
         "sales_total": sales, "quotations": orders.filter(kind="sale", status="draft").count(),
         "receivable": receivable, "payable": payable,
         "low_stock": sum(1 for product in products if (product.stock_quantity or 0) <= product.reorder_level),
-        "open_tasks": Task.objects.filter(company_id=company_id, is_active=True).exclude(stage="done").count(),
-        "overdue_tasks": Task.objects.filter(company_id=company_id, is_active=True, due_date__lt=timezone.localdate()).exclude(stage="done").count(),
+        "open_tasks": tasks.exclude(stage="done").count(),
+        "overdue_tasks": tasks.filter(due_date__lt=timezone.localdate()).exclude(stage="done").count(),
         "pipeline": list(opportunities.values("stage").annotate(count=Count("id"), value=Sum("expected_revenue")).order_by("stage")),
-        "recent_orders": [order_data(item) for item in orders.select_related("invoice", "opportunity")[:5]],
+        "recent_orders": [order_data(item) for item in orders.select_related("opportunity")[:5]],
         "activities": [{"id": item.pk, "summary": item.summary, "actor_email": item.actor_email, "resource": item.resource, "record_id": item.record_id, "created_at": item.created_at} for item in activities[:12]],
     }
-    return JsonResponse(data)
+
+
+@api(["GET"])
+def dashboard(request, company_id):
+    actor = membership_for(request.user, company_id)
+    legacy = dashboard_data(request, company_id, actor)
+
+    def dashboard_impact():
+        restricted = dashboard_data(request, company_id, actor, resolve_effective_access(request.user, company_id))
+        if restricted == legacy:
+            return None
+        def visible_record_keys(payload):
+            return (
+                {("orders", item["id"]) for item in payload["recent_orders"]}
+                | {(item["resource"], item["record_id"]) for item in payload["activities"]}
+            )
+
+        return PermissionImpact(
+            "no_app_access",
+            len(visible_record_keys(legacy) - visible_record_keys(restricted)),
+            restricted,
+        )
+
+    impact = permission_enforced(request, company_id, dashboard_impact)
+    return JsonResponse(impact.value if impact else legacy)

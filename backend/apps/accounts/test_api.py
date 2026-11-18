@@ -31,6 +31,22 @@ class AuthenticationAPITests(TestCase):
         self.assertIsNone(self.client.post("/api/v1/auth/logout/").json()["user"])
         self.assertEqual(self.client.get("/api/v1/companies/").status_code, 401)
 
+    def test_registration_creates_a_session_without_company_access(self):
+        response = self.client.post("/api/v1/auth/register/", {
+            "email": " new-user@example.com ", "password": "New-strong-password-42",
+            "password_confirmation": "New-strong-password-42",
+        }, content_type="application/json")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["user"]["email"], "new-user@example.com")
+        self.assertEqual(response.json()["companies"], [])
+        self.assertTrue(User.objects.filter(email="new-user@example.com").exists())
+
+    def test_registration_validates_duplicates_and_password_confirmation(self):
+        body = {"email": self.user.email, "password": "New-strong-password-42", "password_confirmation": "New-strong-password-42"}
+        self.assertEqual(self.client.post("/api/v1/auth/register/", body, content_type="application/json").status_code, 409)
+        body["email"] = "another-user@example.com"; body["password_confirmation"] = "not-the-same"
+        self.assertEqual(self.client.post("/api/v1/auth/register/", body, content_type="application/json").status_code, 400)
+
     def test_bad_password_and_inactive_account_are_rejected(self):
         for password, active in (("incorrect", True), ("correct-horse-battery-42", False)):
             self.user.is_active = active
@@ -60,6 +76,14 @@ class AuthenticationAPITests(TestCase):
         self.assertNotEqual(old_token, client.cookies["csrftoken"].value)
         self.assertEqual(client.post("/api/v1/auth/logout/").status_code, 403)
         self.assertEqual(client.post("/api/v1/auth/logout/", HTTP_X_CSRFTOKEN=client.cookies["csrftoken"].value).status_code, 200)
+
+    def test_csrf_is_required_for_registration(self):
+        client = Client(enforce_csrf_checks=True)
+        body = {"email": "csrf-register@example.com", "password": "New-strong-password-42", "password_confirmation": "New-strong-password-42"}
+        self.assertEqual(client.post("/api/v1/auth/register/", body, content_type="application/json").status_code, 403)
+        client.get("/api/v1/auth/session/")
+        self.assertEqual(client.post("/api/v1/auth/register/", body, content_type="application/json",
+            HTTP_X_CSRFTOKEN=client.cookies["csrftoken"].value).status_code, 201)
 
     def test_removed_membership_clears_active_company(self):
         self.client.force_login(self.user)

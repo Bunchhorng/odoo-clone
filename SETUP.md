@@ -68,14 +68,14 @@ account recovery and local console-mail instructions.
 
 | Purpose | Default address |
 | --- | --- |
-| KERP sign-in | <http://localhost:5173/login> |
-| In-app guide | <http://localhost:5173/setup> |
+| KERP sign-in | <http://localhost:5175/login> |
+| In-app guide | <http://localhost:5175/setup> |
 | Django administration | <http://localhost:8000/admin/> |
 | API + database health | <http://localhost:8000/api/v1/health/> |
-| Health through Vue's proxy | <http://localhost:5173/api/v1/health/> |
+| Health through Vue's proxy | <http://localhost:5175/api/v1/health/> |
 
 Use the ports from your `.env`. For example, `BACKEND_PORT=8001` makes the admin
-address <http://localhost:8001/admin/>. The frontend stays on 5173 unless
+address <http://localhost:8001/admin/>. The frontend stays on 5175 unless
 `FRONTEND_PORT` changes. Use `localhost` consistently to avoid separate cookie jars.
 
 ## 4. Create the first administrator

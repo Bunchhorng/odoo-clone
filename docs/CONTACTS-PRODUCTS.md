@@ -14,7 +14,7 @@ powershell -ExecutionPolicy Bypass -File scripts/start.ps1
 
 Startup applies the additive migration for categories, optional barcodes and import
 receipts. Existing accounts, companies, products and stock are preserved. Open
-<http://localhost:5173/login>, sign in, and select your company.
+<http://localhost:5175/login>, sign in, and select your company.
 
 Owners and administrators can create/edit/import/archive records. Members can view
 records and export CSV. All API requests check company access independently.

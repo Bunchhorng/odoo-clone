@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
 import { useHealthStore } from '../../stores/health'
-import { activeApplication, applications, authorizedApplications, moduleNavigation, pageLabel } from '../../data/apps'
+import { activeApplication, appCatalogue, applications, authorizedApplications, moduleNavigation, pageLabel, type AppCatalogueEntry } from '../../data/apps'
 import { useTheme, type ThemePreference } from '../../composables/theme'
 import AppIcon from '../AppIcon.vue'
 import ERPPopover from './ERPPopover.vue'
@@ -26,9 +26,12 @@ const recordLabel = computed(() => {
 const error = ref('')
 const signingOut = ref(false)
 const switchSearch = ref('')
-const filteredApps = computed(() => apps.value.filter(app => `${app.name} ${app.description}`.toLowerCase().includes(switchSearch.value.trim().toLowerCase())))
+const filteredCatalogue = computed(() => {
+  const query = switchSearch.value.trim().toLocaleLowerCase()
+  return appCatalogue.map(category => ({ ...category, entries: category.entries.filter(entry => !query || `${category.name} ${entry.name}`.toLocaleLowerCase().includes(query)) })).filter(category => category.entries.length)
+})
 const initials = computed(() => (auth.user?.name || auth.user?.email || 'K').slice(0, 1).toUpperCase())
-const statusLabel = computed(() => ({ checking: 'Checking API', connected: 'API connected', disconnected: 'API unavailable' })[health.status])
+const currentYear = new Date().getFullYear()
 let interval: ReturnType<typeof setInterval>
 function checkWhenVisible() { if (document.visibilityState === 'visible') health.check() }
 onMounted(() => {
@@ -39,7 +42,7 @@ onMounted(() => {
 onUnmounted(() => { clearInterval(interval); document.removeEventListener('visibilitychange', checkWhenVisible) })
 watch(() => route.fullPath, () => {
   error.value = ''
-  document.title = `${label.value} · Odoo Project`
+  document.title = `${label.value} · Odoo`
   document.getElementById('main-content')?.focus({ preventScroll: true })
 })
 async function signOut() {
@@ -52,30 +55,32 @@ function activeLink(path: string) {
   if (path === currentApp.value?.path && route.params.recordId) return true
   return route.path === path
 }
+function applicationFor(entry: AppCatalogueEntry) { return entry.path ? apps.value.find(app => app.path === entry.path) : undefined }
+function entryEnabled(entry: AppCatalogueEntry) { const app = applicationFor(entry); return Boolean(app && app.status !== 'coming-soon' && (!app.requiresCompany || auth.activeCompanyId)) }
+function entryStatus(entry: AppCatalogueEntry) { return applicationFor(entry) ? 'Choose a company' : 'Coming soon' }
 </script>
 
 <template>
   <div class="workspace-shell" :class="{ 'is-launcher': route.path === '/' && auth.user }">
     <a href="#main-content" class="skip-link">Skip to content</a>
     <header class="site-header">
-      <RouterLink to="/" class="brand" aria-label="Odoo Project home"><span class="brand-mark" aria-hidden="true">O</span><span>Odoo Project</span></RouterLink>
-      <ERPPopover v-if="auth.user" label="Open applications" panel-class="app-switcher-panel">
+      <RouterLink to="/" class="brand" aria-label="Odoo home"><span class="brand-mark" aria-hidden="true">o</span><span>Odoo</span></RouterLink>
+      <ERPPopover v-if="auth.user" label="Open applications" panel-class="app-switcher-panel apps-mega-panel">
         <template #trigger><AppIcon name="grid" /><span class="current-app">{{ currentApp?.name || 'Applications' }}</span><AppIcon name="chevron" class="chevron" /></template>
         <template #default>
           <div class="app-switcher-heading"><strong>Applications</strong><RouterLink to="/" class="text-link">View all</RouterLink></div>
           <label class="switcher-search"><span class="sr-only">Find an application</span><input v-model="switchSearch" type="search" placeholder="Find an application…" /></label>
           <nav class="app-menu" aria-label="Applications">
-            <template v-for="app in filteredApps" :key="app.path">
-              <RouterLink v-if="app.status !== 'coming-soon' && (!app.requiresCompany || auth.activeCompanyId)" :to="app.path" :aria-current="currentApp?.path === app.path ? 'page' : undefined"><AppIcon :name="app.icon" /><span>{{ app.name }}</span></RouterLink>
-              <span v-else class="disabled-app" aria-disabled="true"><AppIcon :name="app.icon" /><span>{{ app.name }}<small>{{ app.status === 'coming-soon' ? 'Coming soon' : 'Choose a company' }}</small></span></span>
-            </template>
+            <section v-for="category in filteredCatalogue" :key="category.name" class="app-menu-category" :class="`tone-${category.tone}`"><h2>{{ category.name }}</h2><div class="app-menu-links"><template v-for="entry in category.entries" :key="entry.name"><RouterLink v-if="entryEnabled(entry)" :to="entry.path!" :aria-current="currentApp?.path === entry.path ? 'page' : undefined">{{ entry.name }}</RouterLink><span v-else class="disabled-app" aria-disabled="true">{{ entry.name }}<small>{{ entryStatus(entry) }}</small></span></template></div></section>
           </nav>
-          <p v-if="!filteredApps.length" role="status" class="muted">No matching applications.</p>
+          <p v-if="!filteredCatalogue.length" role="status" class="muted">No matching applications.</p>
         </template>
       </ERPPopover>
-      <nav v-else class="public-navigation" aria-label="Main navigation"><RouterLink to="/setup">Guide</RouterLink><RouterLink to="/login">Sign in</RouterLink></nav>
+      <nav v-else class="public-navigation" aria-label="Main navigation"><RouterLink to="/setup">Guide</RouterLink><RouterLink to="/login">Sign in</RouterLink><RouterLink to="/register">Register</RouterLink></nav>
+      <nav v-if="auth.user && route.path === '/'" class="launcher-primary-nav" aria-label="Workspace navigation">
+        <RouterLink to="/">Apps</RouterLink><RouterLink to="/dashboard">Overview</RouterLink><RouterLink to="/crm">CRM</RouterLink><RouterLink to="/sales">Sales</RouterLink><RouterLink to="/inventory">Inventory</RouterLink>
+      </nav>
       <div class="shell-tools">
-        <span class="connection-badge" :class="health.status" role="status" title="API and database connectivity only. Applications report their own errors."><span class="status-dot" aria-hidden="true"></span><span>{{ statusLabel }}</span></span>
         <ERPNotificationCenter v-if="auth.user" />
         <ERPPopover :label="auth.user ? 'User account menu' : 'Appearance'" panel-class="account-popover">
           <template #trigger><span v-if="auth.user" class="user-avatar" aria-hidden="true">{{ initials }}</span><AppIcon v-else name="settings" /><AppIcon name="chevron" class="chevron" /></template>
@@ -97,6 +102,10 @@ function activeLink(path: string) {
     </nav>
     <div v-if="error" class="shell-feedback"><p class="notice error" role="alert">{{ error }}</p></div>
     <main id="main-content" tabindex="-1"><slot /></main>
-    <footer class="site-footer"><span><strong>Odoo Project</strong> · Your business, connected</span><RouterLink to="/setup">Workspace guide</RouterLink></footer>
+    <footer class="site-footer">
+      <div class="footer-brand"><span class="footer-mark" aria-hidden="true">o</span><div><strong>Odoo</strong><span>One workspace for every team.</span></div></div>
+      <nav class="footer-links" aria-label="Footer navigation"><RouterLink v-if="auth.user" to="/">Applications</RouterLink><RouterLink to="/setup">Workspace guide</RouterLink><RouterLink v-if="auth.user" to="/account">Account</RouterLink><RouterLink v-else to="/login">Sign in</RouterLink></nav>
+      <div class="footer-meta"><span>© {{ currentYear }} Odoo</span><span v-if="auth.activeCompany">{{ auth.activeCompany.name }}</span></div>
+    </footer>
   </div>
 </template>

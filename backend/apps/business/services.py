@@ -2,6 +2,8 @@
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from uuid import UUID, uuid4
+import hashlib
+import json
 
 from django.db.models import Sum
 from django.utils import timezone
@@ -10,7 +12,7 @@ from apps.companies.access import membership_for
 from apps.companies.models import Company
 from apps.core.api import APIError
 from .models import (
-    Activity, Contact, DocumentSequence, Invoice, Opportunity, Order, OrderLine,
+    Activity, Contact, DocumentSequence, Invoice, InvoiceLine, Opportunity, Order, OrderLine,
     Payment, Product, StockMovement, WorkspaceSettings,
 )
 
@@ -238,20 +240,76 @@ def fulfill_order(order, user):
     return True
 
 
-def invoice_order(order):
+def invoiceable_quantities(order):
+    """Goods follow completed physical delivery; services remain order-based."""
+    delivered = {row["order_line_id"]: -row["value"] for row in StockMovement.objects.filter(order=order,
+        quantity__lt=0).values("order_line_id").annotate(value=Sum("quantity"))}
+    invoiced = {row["order_line_id"]: row["value"] for row in InvoiceLine.objects.filter(invoice__order=order).
+        exclude(invoice__status="cancelled").values("order_line_id").annotate(value=Sum("quantity"))}
+    return {line.pk: (line.quantity if order.kind == "purchase" or line.product_kind == "service" else delivered.get(line.pk, ZERO)) - invoiced.get(line.pk, ZERO)
+            for line in order.lines.all()}
+
+
+def invoice_order(order, data=None):
     if order.status != "confirmed":
         raise APIError("Only confirmed orders can be invoiced.", 409)
-    existing = Invoice.objects.filter(order=order).first()
-    if existing:
-        return existing
+    data = data or {}
+    request_id = data.get("request_id")
+    if request_id is not None:
+        try: request_id = UUID(str(request_id))
+        except (ValueError, AttributeError): raise APIError("request_id must be a UUID.") from None
+    raw = data.get("lines")
+    selected = None
+    if raw is not None:
+        if not isinstance(raw, list) or not raw: raise APIError("Choose one or more invoiceable lines.")
+        selected = {}
+        for item in raw:
+            if not isinstance(item, dict) or set(item) != {"line_id", "quantity"}: raise APIError("Each invoice line needs only line_id and quantity.")
+            line_id = positive_id(item["line_id"])
+            if line_id in selected: raise APIError("Each order line may appear only once.")
+            selected[line_id] = decimal_value(item["quantity"], "Invoice quantity", places=3, minimum=Decimal("0.001"), maximum=Decimal("999999999.999"))
+        canonical = sorted((line_id, str(quantity)) for line_id, quantity in selected.items())
+        digest = hashlib.sha256(json.dumps({"order": order.pk, "lines": canonical}, sort_keys=True).encode()).hexdigest()
+        if request_id:
+            existing = Invoice.objects.filter(request_id=request_id).first()
+            if existing:
+                if existing.company_id != order.company_id or existing.order_id != order.pk or existing.payload_digest != digest:
+                    raise APIError("This invoice request was already used with different details.", 409)
+                return existing
+    eligible = invoiceable_quantities(order)
+    if selected is None:
+        selected = {line_id: quantity for line_id, quantity in eligible.items() if quantity > ZERO}
+    if any(line_id not in eligible or quantity > eligible[line_id] for line_id, quantity in selected.items()) or not selected:
+        raise APIError("An invoice quantity exceeds the delivered, uninvoiced quantity.", 409)
+    canonical = sorted((line_id, str(quantity)) for line_id, quantity in selected.items())
+    digest = hashlib.sha256(json.dumps({"order": order.pk, "lines": canonical}, sort_keys=True).encode()).hexdigest()
+    if request_id:
+        existing = Invoice.objects.filter(request_id=request_id).first()
+        if existing:
+            if existing.company_id != order.company_id or existing.order_id != order.pk or existing.payload_digest != digest:
+                raise APIError("This invoice request was already used with different details.", 409)
+            return existing
+    lines = {line.pk: line for line in order.lines.all()}
+    snapshots, subtotal, tax_total = [], ZERO, ZERO
+    for line_id, quantity in selected.items():
+        line = lines[line_id]
+        line_subtotal = (quantity * line.unit_price).quantize(CENT, rounding=ROUND_HALF_UP)
+        line_tax = (line_subtotal * line.tax_rate / 100).quantize(CENT, rounding=ROUND_HALF_UP)
+        subtotal += line_subtotal; tax_total += line_tax
+        snapshots.append((line, quantity, line_subtotal, line_tax))
     invoice = Invoice(company_id=order.company_id, order=order,
                       number=next_number(order.company_id, "INV" if order.kind == "sale" else "BILL"),
                       kind="customer" if order.kind == "sale" else "vendor",
                       contact=order.contact, contact_name=order.contact_name, contact_email=order.contact_email,
                       contact_address=order.contact_address, currency=order.currency,
-                      subtotal=order.subtotal, tax_total=order.tax_total, total=order.total, notes=order.notes)
+                      subtotal=subtotal, tax_total=tax_total, total=subtotal + tax_total, notes=order.notes,
+                      request_id=request_id, payload_digest=digest)
     invoice.full_clean()
     invoice.save()
+    InvoiceLine.objects.bulk_create([InvoiceLine(invoice=invoice, order_line=line, quantity=quantity,
+        description=line.description, unit_price=line.unit_price, tax_rate=line.tax_rate,
+        subtotal=line_subtotal, tax_total=line_tax, total=line_subtotal + line_tax)
+        for line, quantity, line_subtotal, line_tax in snapshots])
     return invoice
 
 

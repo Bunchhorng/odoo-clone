@@ -9,6 +9,22 @@ export const applications: AppDefinition[] = modules.map(app => ({
   requiresCompany: !['/settings', '/team'].includes(app.path),
 }))
 
+export interface AppCatalogueEntry { name: string; path?: string }
+export interface AppCatalogueCategory { name: string; tone: string; entries: AppCatalogueEntry[] }
+
+// The catalogue makes planned capabilities discoverable without exposing them as routes.
+// A path is assigned only when the corresponding KERP application is implemented.
+export const appCatalogue: AppCatalogueCategory[] = [
+  { name: 'Finance', tone: 'teal', entries: [{ name: 'Accounting', path: '/accounting' }, { name: 'Invoicing', path: '/invoicing' }, { name: 'Expenses' }, { name: 'Sign' }, { name: 'Spreadsheet' }, { name: 'ESG' }] },
+  { name: 'Sales', tone: 'coral', entries: [{ name: 'CRM', path: '/crm' }, { name: 'Sales', path: '/sales' }, { name: 'Subscriptions' }, { name: 'Point of Sale' }, { name: 'Rental' }] },
+  { name: 'Websites', tone: 'blue', entries: [{ name: 'Website Builder' }, { name: 'eCommerce' }, { name: 'Events' }, { name: 'Blog' }, { name: 'eLearning' }, { name: 'Forum' }] },
+  { name: 'Supply chain', tone: 'violet', entries: [{ name: 'Inventory', path: '/inventory' }, { name: 'Purchase', path: '/purchase' }, { name: 'Manufacturing' }, { name: 'Maintenance' }, { name: 'PLM' }, { name: 'Quality' }] },
+  { name: 'Human resources', tone: 'indigo', entries: [{ name: 'Employees', path: '/employees' }, { name: 'Payroll' }, { name: 'Recruitment' }, { name: 'Time off' }, { name: 'Appraisals' }, { name: 'Fleet' }] },
+  { name: 'Marketing', tone: 'orange', entries: [{ name: 'Social Marketing' }, { name: 'Email Marketing' }, { name: 'SMS Marketing' }, { name: 'Marketing Automation' }, { name: 'Surveys' }] },
+  { name: 'Services', tone: 'orange', entries: [{ name: 'Project', path: '/projects' }, { name: 'Timesheets', path: '/timesheets' }, { name: 'Planning' }, { name: 'Appointments' }, { name: 'Live Chat' }, { name: 'Helpdesk', path: '/helpdesk' }] },
+  { name: 'Productivity', tone: 'plum', entries: [{ name: 'Team', path: '/team' }, { name: 'Settings', path: '/settings' }, { name: 'Documents' }, { name: 'Knowledge' }, { name: 'Discuss' }] },
+]
+
 export function authorizedApplications(apps: AppDefinition[], role?: CompanyRole) {
   return apps.filter(app => !app.roles || (role !== undefined && app.roles.includes(role)))
 }
@@ -30,7 +46,7 @@ export const moduleNavigation: Record<string, NavigationItem[]> = {
   '/crm': links(['Pipeline', '/crm'], ['Quotations', '/sales']),
   '/sales': links(['Quotations & orders', '/sales'], ['Customers', '/contacts'], ['Products', '/inventory']),
   '/purchase': links(['Requests & orders', '/purchase'], ['Suppliers', '/contacts'], ['Products', '/inventory']),
-  '/inventory': links(['Products', '/inventory'], ['Stock movements', '/inventory/movements'], ['Purchase orders', '/purchase']),
+  '/inventory': links(['Products', '/inventory'], ['Stock movements', '/inventory/movements'], ['Warehouses', '/inventory/warehouses'], ['Locations', '/inventory/locations'], ['Purchase orders', '/purchase']),
   '/invoicing': links(['Invoices & bills', '/invoicing'], ['Sales', '/sales'], ['Purchase', '/purchase']),
   '/accounting': links(['Accounting', '/accounting'], ['Invoices & bills', '/invoicing']),
   '/projects': links(['Projects', '/projects'], ['All tasks', '/tasks'], ['Timesheets', '/timesheets']),
@@ -45,6 +61,7 @@ export function pageLabel(path: string) {
   const known: Record<string, string> = {
     '/': 'Applications', '/account': 'Account & security', '/setup': 'Getting started',
     '/companies': 'Companies', '/tasks': 'All tasks', '/inventory/movements': 'Stock movements',
+    '/inventory/warehouses': 'Warehouses', '/inventory/locations': 'Stock locations',
     '/employees/departments': 'Departments',
   }
   return known[path] || activeApplication(path)?.name || 'Workspace'

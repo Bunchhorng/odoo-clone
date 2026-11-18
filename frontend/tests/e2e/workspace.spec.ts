@@ -15,7 +15,7 @@ let companyId: number, secondId: number
 let ownerState: Awaited<ReturnType<BrowserContext['storageState']>>
 let seeded = false
 const widths = [1440, 1024, 768, 390, 320]
-const routes = ['/', '/dashboard', '/contacts', '/crm', '/sales', '/purchase', '/inventory', '/inventory/movements', '/invoicing', '/accounting', '/projects', '/tasks', '/employees', '/employees/departments', '/timesheets', '/helpdesk', '/team', '/settings', '/companies', '/account', '/setup']
+const routes = ['/', '/dashboard', '/contacts', '/crm', '/sales', '/purchase', '/inventory', '/inventory/movements', '/inventory/warehouses', '/inventory/locations', '/invoicing', '/accounting', '/projects', '/tasks', '/employees', '/employees/departments', '/timesheets', '/helpdesk', '/team', '/settings', '/companies', '/account', '/setup']
 function django(code: string) {
   return execFileSync('docker', ['compose', 'exec', '-T', 'backend', 'python', 'manage.py', 'shell'], { cwd: root, input: code, encoding: 'utf8', windowsHide: true, timeout: 120000 })
 }
@@ -79,7 +79,7 @@ test.beforeAll(async ({ browser }) => {
 
 test.afterAll(() => {
   if (!seeded) return
-  django(`from django.contrib.auth import get_user_model\nfrom apps.companies.models import Company\nfrom django.db import transaction\nwith transaction.atomic():\n    Company.objects.filter(name__in=[${JSON.stringify(companyName)}, ${JSON.stringify(secondName)}], memberships__user__email=${JSON.stringify(owner)}).delete()\n    get_user_model().objects.filter(email__in=[${JSON.stringify(owner)}, ${JSON.stringify(member)}]).delete()\n`)
+  django(`from django.contrib.auth import get_user_model\nfrom apps.companies.models import Company\nfrom apps.business.models import Warehouse, StockLocation\nfrom django.db import transaction\nwith transaction.atomic():\n    companies = Company.objects.filter(name__in=[${JSON.stringify(companyName)}, ${JSON.stringify(secondName)}], memberships__user__email=${JSON.stringify(owner)})\n    ids = list(companies.values_list('id', flat=True))\n    Warehouse.objects.filter(company_id__in=ids).delete()\n    while StockLocation.objects.filter(company_id__in=ids).exists():\n        StockLocation.objects.filter(company_id__in=ids, children__isnull=True).delete()\n    companies.delete()\n    get_user_model().objects.filter(email__in=[${JSON.stringify(owner)}, ${JSON.stringify(member)}]).delete()\n`)
 })
 
 test.beforeEach(async ({ context }) => {
@@ -141,6 +141,48 @@ test('forms trap focus, protect unsaved changes and preserve the API-backed save
   await expect(page.getByRole('region', { name: /^Contacts table/ })).toBeVisible()
   await page.getByLabel('Group this page by').selectOption('country')
   await expect(page.locator('.table-group')).toContainText('Unspecified')
+})
+
+test('INV-01 warehouse and location forms persist, protect hierarchy and archive safely', async ({ page }, info) => {
+  await ready(page, '/inventory/warehouses')
+  await page.getByRole('button', { name: 'New warehouse', exact: true }).first().click()
+  await page.locator('input[name=structure_name]').fill('Primary warehouse')
+  await page.locator('input[name=structure_code]').fill('MAIN')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.locator('.data-table')).toContainText('Default for existing APIs')
+  await page.getByRole('button', { name: 'New warehouse', exact: true }).first().click()
+  await page.locator('input[name=structure_name]').fill('West warehouse')
+  await page.locator('input[name=structure_code]').fill('WEST')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  const row = page.locator('.data-table tbody tr').filter({ hasText: 'West warehouse' })
+  page.once('dialog', prompt => prompt.accept())
+  await row.getByRole('button', { name: 'Archive', exact: true }).click()
+  await expect(row).toHaveCount(0)
+  await page.getByLabel('Structure active records').selectOption('false')
+  await expect(page.locator('.data-table')).toContainText('West warehouse')
+  page.once('dialog', prompt => prompt.accept())
+  await page.getByRole('button', { name: 'Restore', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Inventory navigation' }).getByRole('link', { name: 'Locations', exact: true }).click()
+  await expect(page.locator('.data-table')).toContainText('MAIN/STOCK')
+  const locations = (await (await api(page, `companies/${companyId}/erp/locations/?active=all`)).json()).results
+  const root = locations.find((item: any) => item.code === 'MAIN/STOCK')
+  await page.getByRole('button', { name: 'New location', exact: true }).first().click()
+  await page.locator('input[name=structure_name]').fill('Shelf A')
+  await page.locator('input[name=structure_code]').fill('MAIN/A')
+  await page.locator('select[name=location_parent]').selectOption(String(root.id))
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Hierarchy', exact: true }).click()
+  await expect(page.getByRole('list', { name: 'Location hierarchy' })).toContainText('Shelf A')
+  await page.setViewportSize({ width: 320, height: 812 })
+  await noOverflow(page)
+  await page.screenshot({ path: info.outputPath('inventory-locations-mobile.png'), fullPage: true })
+  await page.getByRole('navigation', { name: 'Inventory navigation' }).getByRole('link', { name: 'Warehouses', exact: true }).click()
+  await expect(page.locator('h1')).toHaveText('Warehouses')
+  await noOverflow(page)
+  expect((await api(page, `companies/${companyId}/erp/warehouses/?active=all`)).ok()).toBeTruthy()
 })
 
 for (const theme of ['light', 'dark']) {
@@ -224,6 +266,12 @@ test('members retain read access; CSRF and cross-company writes remain protected
   await page.locator('.record-card-main').click()
   await expect(page.getByRole('textbox', { name: 'Name', exact: true })).toBeDisabled()
   await page.keyboard.press('Escape')
+  await ready(page, '/inventory/warehouses')
+  await expect(page.getByRole('button', { name: 'New warehouse', exact: true })).toHaveCount(0)
+  await ready(page, '/inventory/locations')
+  await expect(page.getByRole('button', { name: 'New location', exact: true })).toHaveCount(0)
+  expect((await api(page, `companies/${companyId}/erp/warehouses/`, 'POST', { name: 'Forbidden', code: 'BAD' })).status()).toBe(403)
+  expect((await api(page, `companies/${companyId}/erp/locations/`, 'POST', { name: 'Forbidden', code: 'BAD' })).status()).toBe(403)
   const missingCsrf = await page.request.post(`/api/v1/companies/${companyId}/select/`, { data: {} })
   expect(missingCsrf.status()).toBe(403)
   await api(page, 'auth/logout/', 'POST')

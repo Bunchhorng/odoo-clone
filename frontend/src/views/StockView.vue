@@ -14,9 +14,10 @@ const search = ref('')
 const kind = ref('all')
 const productId = ref(route.query.product_id || '')
 const orderId = computed(() => route.query.order_id || '')
+const locationId = computed(() => route.query.location_id || '')
 const dateFrom = ref('')
 const dateTo = ref('')
-const page = usePage([search, kind, productId, orderId, dateFrom, dateTo])
+const page = usePage([search, kind, productId, orderId, locationId, dateFrom, dateTo])
 const dialog = ref(null)
 const products = ref([])
 const form = ref({ product_id: '', quantity: '', reason: '' })
@@ -30,11 +31,11 @@ let requestId
 let generation = 0
 const labels = { adjustment: 'Adjustment', receipt: 'Receipt', delivery: 'Delivery', return: 'Supplier return', reversal: 'Reversal' }
 const title = computed(() => mode.value === 'return' ? 'Return to supplier' : mode.value === 'reversal' ? 'Reverse adjustment' : 'Adjust stock')
-const hasFilters = computed(() => search.value || kind.value !== 'all' || productId.value || orderId.value || dateFrom.value || dateTo.value)
+const hasFilters = computed(() => search.value || kind.value !== 'all' || productId.value || orderId.value || locationId.value || dateFrom.value || dateTo.value)
 const { data, error, loading, refresh } = useWorkspace(id => erp(id, `stock/?${new URLSearchParams({
-  q: search.value, kind: kind.value, product_id: productId.value, order_id: orderId.value,
+  q: search.value, kind: kind.value, product_id: productId.value, order_id: orderId.value, location_id: locationId.value,
   date_from: dateFrom.value, date_to: dateTo.value, page: String(page.value),
-})}`), [page, search, kind, productId, orderId, dateFrom, dateTo])
+})}`), [page, search, kind, productId, orderId, locationId, dateFrom, dateTo])
 syncPage(page, data)
 watch(() => route.query.product_id, value => { productId.value = value || '' })
 watch(() => auth.activeCompanyId, async (companyId, previous) => {
@@ -97,18 +98,19 @@ async function save() {
     </div>
     <div class="workspace-content">
       <p v-if="orderId" class="notice">Showing movements for {{ data?.results[0]?.order_number || `order ${orderId}` }}. <button type="button" class="inline-button" @click="clearFilters">Show all movements</button></p>
+      <p v-if="locationId" class="notice">Showing movements touching location #{{ locationId }}. <button type="button" class="inline-button" @click="clearFilters">Show all movements</button></p>
       <p v-if="!auth.activeCompanyId" class="empty-state">Choose a company to view its stock.</p>
       <p v-if="error" class="notice error" role="alert">{{ error }} <button class="inline-button" @click="refresh">Retry</button></p>
       <p v-if="success" class="notice success" role="status">{{ success }}</p>
       <p v-if="loading" class="loading-state" role="status">Loading stock movements…</p>
       <template v-if="data">
-        <div v-if="data.results.length" class="table-wrap" role="region" aria-label="Stock records" tabindex="0"><table class="data-table"><thead><tr><th>Product</th><th>Type</th><th>Reference</th><th>Quantity change</th><th>Reason</th><th>Date / by</th><th v-if="auth.canManage">Actions</th></tr></thead><tbody>
+        <div v-if="data.results.length" class="table-wrap" role="region" aria-label="Stock records" tabindex="0"><table class="data-table"><thead><tr><th>Product</th><th>Type</th><th>Reference</th><th>Quantity change</th><th>Reason</th><th>Locations</th><th>Date / by</th><th v-if="auth.canManage">Actions</th></tr></thead><tbody>
           <tr v-for="item in data.results" :key="item.id">
             <td>{{ item.product_name }}<small class="block muted">{{ item.sku }}</small></td>
             <td>{{ labels[item.kind] }}<small v-if="item.return_of_id" class="block muted">Returns #{{ item.return_of_id }}</small><small v-if="item.reversal_of_id" class="block muted">Reverses #{{ item.reversal_of_id }}</small><small v-if="item.reversed_by_id" class="block muted">Reversed by #{{ item.reversed_by_id }}</small></td>
             <td><RouterLink v-if="item.order_id" :to="`${item.order_kind === 'purchase' ? '/purchase' : '/sales'}/${item.order_id}`" class="text-link">{{ item.order_number }}</RouterLink><span v-else>Adjustment #{{ item.id }}</span><small v-if="item.receipt_number" class="block muted">{{ item.receipt_number }}</small></td>
             <td class="numeric" :class="Number(item.quantity) > 0 ? 'positive' : 'negative'">{{ Number(item.quantity) > 0 ? '+' : '' }}{{ item.quantity }} {{ item.unit }}<small v-if="item.kind === 'receipt'" class="block muted">Unreturned: {{ item.returnable_quantity }}</small></td>
-            <td>{{ item.reason }}<small v-if="item.receipt_notes" class="block muted">{{ item.receipt_notes }}</small></td><td>{{ dateLabel(item.created_at) }}<small class="block muted">{{ item.actor_email }}</small></td>
+            <td>{{ item.reason }}<small v-if="item.receipt_notes" class="block muted">{{ item.receipt_notes }}</small></td><td>{{ item.source_location_code }} &rarr; {{ item.destination_location_code }}<small v-if="item.location_inferred" class="record-detail">Inferred legacy locations</small></td><td>{{ dateLabel(item.created_at) }}<small class="block muted">{{ item.actor_email }}</small></td>
             <td v-if="auth.canManage"><button v-if="item.kind === 'receipt' && Number(item.returnable_quantity) > 0" type="button" class="inline-button" :disabled="auth.busy" @click="correct(item, 'return')">Return to supplier</button><button v-if="item.can_reverse" type="button" class="inline-button" :disabled="auth.busy" @click="correct(item, 'reversal')">Reverse adjustment</button></td>
           </tr>
         </tbody></table></div>
