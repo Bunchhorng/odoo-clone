@@ -1,0 +1,59 @@
+name: ERP foundation checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: erp-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker-checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Verify parity records and verifier regressions
+        run: |
+          python3 scripts/verify-parity.py
+          python3 -m unittest discover -s scripts -p test_verify_parity.py
+      - name: Prepare disposable CI configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import secrets
+          target = Path('.env')
+          if target.exists():
+              raise SystemExit('A checkout must not contain a private .env file.')
+          content = Path('.env.example').read_text()
+          for placeholder in ('REPLACE_WITH_DJANGO_SECRET_KEY', 'REPLACE_WITH_MYSQL_APP_PASSWORD', 'REPLACE_WITH_MYSQL_ROOT_PASSWORD'):
+              content = content.replace(placeholder, secrets.token_hex(32))
+          target.write_text(content)
+          PY
+          docker compose config --quiet
+      - name: Build and start a fresh stack
+        run: docker compose up -d --build --wait --wait-timeout 300
+      - name: Check dependencies, schema, tests, and frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose exec -T backend python -m pip check
+          docker compose exec -T backend python manage.py check
+          docker compose exec -T backend python manage.py makemigrations --check --dry-run
+          docker compose exec -T backend python manage.py test --noinput
+          docker compose exec -T frontend npm run check
+      - name: Service status on failure
+        if: failure()
+        run: docker compose ps --all
+      - name: Remove disposable runner services
+        if: always()
+        run: docker compose down --volumes --remove-orphans

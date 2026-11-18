@@ -1,0 +1,141 @@
+import assert from 'node:assert/strict'
+
+export async function verifyPurchaseInventory({ send, evaluate, fill, click, screenshot, navigate, until, browserAPI, companyId, results }) {
+  const base = `companies/${companyId}/erp/`
+  async function ready() { await until(() => evaluate('!document.querySelector(".loading-state") && Boolean(document.querySelector(".control-panel"))'), 'purchase/inventory data') }
+  async function press(text, selector = '.document-actions button') {
+    await evaluate(`(() => { const button = [...document.querySelectorAll(${JSON.stringify(selector)})].find(item => item.textContent.trim() === ${JSON.stringify(text)}); if (!button) throw new Error('Missing ' + ${JSON.stringify(text)}); button.click(); })()`)
+  }
+  async function create(resource, body) {
+    const response = await browserAPI(base + resource + '/', 'POST', body)
+    assert.equal(response.status, 201, JSON.stringify(response.data))
+    return response.data
+  }
+  async function submitDialog() {
+    await click('dialog[open] .dialog-footer .button-primary')
+    await until(() => evaluate('!document.querySelector("dialog[open]") && !document.querySelector(".loading-state")'), 'stock operation saved')
+  }
+  async function currentOrder(id) { return (await browserAPI(base + `orders/${id}/`)).data }
+  async function chooseRowAction(product, text) {
+    await evaluate(`(() => { const row = [...document.querySelectorAll('.data-table tbody tr')].find(item => item.textContent.includes(${JSON.stringify(product)})); const button = [...(row?.querySelectorAll('button') || [])].find(item => item.textContent.trim() === ${JSON.stringify(text)}); if (!button) throw new Error('Missing stock action'); button.click(); })()`)
+    await until(() => evaluate('Boolean(document.querySelector("dialog[open] fieldset:not(:disabled)"))'), 'stock correction form')
+  }
+  const supplier = await create('contacts', { name: 'Inventory phase supplier', is_customer: false, is_supplier: true })
+  const desk = await create('products', { name: 'Inventory phase desk', sku: 'INV-DESK', cost_price: '12', sale_price: '20' })
+  const lamp = await create('products', { name: 'Inventory phase lamp', sku: 'INV-LAMP', cost_price: '5', sale_price: '10' })
+  await navigate('/purchase/new')
+  await until(() => evaluate('Boolean(document.querySelector("select[name=product_0]"))'), 'RFQ choices')
+  await fill('select[name=contact_id]', String(supplier.id))
+  await fill('select[name=product_0]', String(desk.id))
+  await fill('input[name=quantity_0]', '5')
+  assert.equal(Number(await evaluate('document.querySelector("input[name=price_0]").value')), 12)
+  await click('.add-line')
+  await fill('select[name=product_1]', String(lamp.id))
+  await fill('input[name=quantity_1]', '3')
+  await click('button[form=order-form]')
+  await until(() => evaluate('Boolean(document.querySelector(".document-actions")) && !location.pathname.endsWith("new")'), 'RFQ saved')
+  const orderId = Number(await evaluate('location.pathname.split("/").at(-1)'))
+  await press('Confirm purchase')
+  await until(() => evaluate('document.querySelector(".erp-status-bar [aria-current=step]")?.getAttribute("data-value") === "confirmed"'), 'purchase confirmed')
+  let order = await currentOrder(orderId)
+  const deskLine = order.lines.find(line => line.product_id === desk.id)
+  const lampLine = order.lines.find(line => line.product_id === lamp.id)
+  await press('Receive products')
+  await until(() => evaluate('Boolean(document.querySelector("dialog[open] input[name^=receive_]"))'), 'partial receipt form')
+  await fill(`input[name=receive_${deskLine.id}]`, '2')
+  await fill(`input[name=receive_${lampLine.id}]`, '1')
+  await fill('input[name=receipt_notes]', 'Supplier delivery INV-01')
+  await submitDialog()
+  order = await currentOrder(orderId)
+  assert.equal(order.receipt_status, 'partial')
+  assert.equal(order.fulfilled_at, null)
+  assert.equal(Number(order.lines.find(line => line.product_id === desk.id).remaining_quantity), 3)
+  assert.ok(await evaluate('document.querySelector(".document-actions").textContent.includes("Partially received")'))
+  assert.equal(await evaluate('document.querySelectorAll(".receipt-history tbody tr").length'), 2)
+  results.push('Purchase RFQs use supplier costs; partial receipt quantities persist per line with remaining amounts and numbered receipt history.')
+
+  await press('Stock movements', '.document-actions a')
+  await ready()
+  assert.equal(await evaluate('document.querySelectorAll(".data-table tbody tr").length'), 2)
+  await chooseRowAction(desk.name, 'Return to supplier')
+  await fill('input[name=stock_quantity]', '1')
+  await fill('input[name=stock_reason]', 'Damaged desk from INV-01')
+  await submitDialog()
+  assert.equal(Number((await browserAPI(base + `products/${desk.id}/`)).data.stock_quantity), 1)
+  await navigate(`/purchase/${orderId}`); await ready()
+  order = await currentOrder(orderId)
+  assert.equal(Number(order.lines.find(line => line.product_id === desk.id).remaining_quantity), 4)
+  await press('Receive products')
+  await until(() => evaluate('Boolean(document.querySelector("dialog[open] input[name^=receive_]"))'), 'replacement receipt form')
+  assert.equal(Number(await evaluate(`document.querySelector('input[name=receive_${deskLine.id}]').value`)), 4)
+  await fill('input[name=receipt_notes]', 'Replacement and remaining delivery INV-02')
+  await submitDialog()
+  assert.equal((await currentOrder(orderId)).receipt_status, 'received')
+  assert.equal(Number((await browserAPI(base + `products/${desk.id}/`)).data.stock_quantity), 5)
+  assert.equal(Number((await browserAPI(base + `products/${lamp.id}/`)).data.stock_quantity), 3)
+  results.push('Supplier returns reduce stock, reopen purchase quantities for replacement, and retain original receipt and return history.')
+
+  await navigate('/inventory/movements'); await ready()
+  await fill('select[aria-label="Movement type"]', 'receipt')
+  await fill('select[aria-label="Movement product"]', String(desk.id))
+  await until(() => evaluate('!document.querySelector(".loading-state") && document.querySelectorAll(".data-table tbody tr").length === 2'), 'receipt/product filters')
+  await fill('input[aria-label="Search stock movements"]', 'INV-02')
+  await until(() => evaluate('!document.querySelector(".loading-state") && document.querySelectorAll(".data-table tbody tr").length === 1'), 'movement reason/reference search')
+  // Both supplier delivery references in notes and receipt numbers are searchable.
+  const latest = (await browserAPI(base + `orders/${orderId}/receipts/`)).data.results[0]
+  await fill('input[aria-label="Search stock movements"]', latest.number)
+  await until(() => evaluate('!document.querySelector(".loading-state") && document.querySelectorAll(".data-table tbody tr").length === 1'), 'receipt number search')
+  await screenshot('inventory-receipt-ledger-desktop.png')
+  await press('Clear filters', '.catalog-filters button'); await ready()
+  results.push('Stock movement filters combine product, movement type, order scope, and receipt-number search with links back to purchase orders.')
+
+  await click('.control-panel .button-primary')
+  await until(() => evaluate('Boolean(document.querySelector("dialog[open] fieldset:not(:disabled)"))'), 'adjustment form')
+  await fill('select[name=stock_product]', String(lamp.id))
+  await fill('input[name=stock_quantity]', '2')
+  await fill('input[name=stock_reason]', 'Inventory phase incorrect count')
+  await submitDialog()
+  const original = (await browserAPI(base + 'stock/?q=Inventory%20phase%20incorrect%20count')).data.results[0]
+  const retry = await browserAPI(base + 'stock/', 'POST', { product_id: lamp.id, quantity: '2', reason: original.reason, request_id: original.request_id })
+  assert.equal(retry.status, 200)
+  assert.equal(retry.data.id, original.id)
+  assert.equal(Number(retry.data.stock_quantity), 5)
+  await fill('input[aria-label="Search stock movements"]', 'Inventory phase incorrect count')
+  await until(() => evaluate('!document.querySelector(".loading-state") && document.querySelectorAll(".data-table tbody tr").length === 1'), 'manual adjustment row')
+  await chooseRowAction(lamp.name, 'Reverse adjustment')
+  await fill('input[name=stock_reason]', 'Correcting the inventory count')
+  await submitDialog()
+  assert.equal(Number((await browserAPI(base + `products/${lamp.id}/`)).data.stock_quantity), 3)
+  assert.ok(await evaluate('document.querySelector(".data-table tbody").textContent.includes("Reversed by")'))
+  assert.equal(await evaluate('document.querySelectorAll(".data-table tbody button").length'), 0)
+  results.push('Adjustment retries retain one ledger entry; reversing a mistaken count restores stock and keeps both entries in history.')
+
+  const pending = await create('orders', { kind: 'purchase', contact_id: supplier.id, lines: [{ product_id: desk.id, quantity: '1' }] })
+  assert.equal((await browserAPI(base + `orders/${pending.id}/actions/`, 'POST', { action: 'confirm', expected_version: pending.version })).status, 200)
+  await send('Emulation.setDeviceMetricsOverride', { width: 375, height: 812, deviceScaleFactor: 1, mobile: true })
+  await navigate(`/purchase/${pending.id}`); await ready()
+  assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true)
+  await press('Receive products')
+  await until(() => evaluate('Boolean(document.querySelector("dialog[open] input[name^=receive_]"))'), 'mobile receipt')
+  assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true)
+  await screenshot('purchase-receipt-mobile.png')
+  await click('dialog[open] button[aria-label=Close]')
+  await until(() => evaluate('!document.querySelector("dialog[open]")'), 'receipt dialog closed')
+  await navigate(`/inventory/movements?order_id=${orderId}`); await ready()
+  assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true)
+  await screenshot('inventory-movements-mobile.png')
+  await send('Emulation.setDeviceMetricsOverride', { width: 1365, height: 900, deviceScaleFactor: 1, mobile: false })
+  results.push('Purchase quantities, receipt dialogs, and the movement ledger fit 375px; wide tables scroll internally.')
+  await navigate('/')
+}
+
+export async function verifyInventoryReadOnly({ evaluate, navigate, until, browserAPI, companyId, results }) {
+  await navigate('/inventory/movements')
+  await until(() => evaluate('!document.querySelector(".loading-state") && Boolean(document.querySelector(".data-table"))'), 'member ledger')
+  assert.equal(await evaluate('document.querySelectorAll(".control-panel .button-primary, .data-table tbody button").length'), 0)
+  const purchase = (await browserAPI(`companies/${companyId}/erp/orders/?kind=purchase`)).data.results[0]
+  await navigate(`/purchase/${purchase.id}`)
+  await until(() => evaluate('!document.querySelector(".loading-state") && Boolean(document.querySelector(".document-actions"))'), 'member purchase')
+  assert.equal(await evaluate('document.querySelectorAll(".document-actions button, .control-actions button[form=order-form]").length'), 0)
+  results.push('Members can inspect purchase progress and stock history while receipt, return, adjustment, and reversal controls remain hidden.')
+}
