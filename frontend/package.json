@@ -1,5 +1,11 @@
 {
-  "name": "kerp-frontend",
+  "name": "odoo-clone",
+  "compatibility_date": "2026-11-20",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  },
+
   "private": true,
   "version": "0.1.0",
   "type": "module",
