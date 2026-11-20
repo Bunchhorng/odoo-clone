@@ -1,0 +1,151 @@
+services:
+  - type: web
+    name: kerp-api
+    runtime: python
+    region: singapore
+    plan: 0.5c-512mb
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
+    preDeployCommand: python manage.py migrate --noinput
+    startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 60 --access-logfile - --error-logfile -
+    healthCheckPath: /api/v1/health/
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.production
+      - key: DJANGO_DEBUG
+        value: "0"
+      - key: PERMISSION_MODE
+        value: enforce
+      - key: DJANGO_SECURE_HSTS_SECONDS
+        value: "31536000"
+      - key: DATABASE_URL
+        sync: false
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_ALLOWED_HOSTS
+        sync: false
+      - key: FRONTEND_ORIGIN
+        sync: false
+      - key: DJANGO_CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: DJANGO_CSRF_TRUSTED_ORIGINS
+        sync: false
+      - key: DJANGO_COOKIE_DOMAIN
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        sync: false
+      - key: EMAIL_BACKEND
+        value: django.core.mail.backends.smtp.EmailBackend
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_PORT
+        value: "587"
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: EMAIL_USE_TLS
+        value: "1"
+
+  - type: worker
+    name: kerp-auth-mailer
+    runtime: python
+    region: singapore
+    plan: 0.5c-512mb
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: sh -c 'until python manage.py migrate --check; do sleep 5; done; exec python manage.py process_auth_mail --loop'
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.production
+      - key: DJANGO_DEBUG
+        value: "0"
+      - key: PERMISSION_MODE
+        value: enforce
+      - key: DJANGO_SECURE_HSTS_SECONDS
+        value: "31536000"
+      - key: DATABASE_URL
+        fromService:
+          type: web
+          name: kerp-api
+          envVarKey: DATABASE_URL
+      - key: DJANGO_SECRET_KEY
+        fromService:
+          type: web
+          name: kerp-api
+          envVarKey: DJANGO_SECRET_KEY
+      - key: DJANGO_ALLOWED_HOSTS
+        fromService:
+          type: web
+          name: kerp-api
+          envVarKey: DJANGO_ALLOWED_HOSTS
+      - key: FRONTEND_ORIGIN
+        fromService:
+          type: web
+          name: kerp-api
+          envVarKey: FRONTEND_ORIGIN
+      - key: DJANGO_CORS_ALLOWED_ORIGINS
+        fromService:
+          type: web
+          name: kerp-api
+          envVarKey: DJANGO_CORS_ALLOWED_ORIGINS
+      - key: DJANGO_CSRF_TRUSTED_ORIGINS
+        fromService:
+          type: web
+          name: kerp-api
+          envVarKey: DJANGO_CSRF_TRUSTED_ORIGINS
+      - key: DJANGO_COOKIE_DOMAIN
+        fromService:
+          type: web
+          name: kerp-api
+          envVarKey: DJANGO_COOKIE_DOMAIN
+      - key: DEFAULT_FROM_EMAIL
+        fromService:
+          type: web
+          name: kerp-api
+          envVarKey: DEFAULT_FROM_EMAIL
+      - key: EMAIL_BACKEND
+        value: django.core.mail.backends.smtp.EmailBackend
+      - key: EMAIL_HOST
+        fromService:
+          type: web
+          name: kerp-api
+          envVarKey: EMAIL_HOST
+      - key: EMAIL_PORT
+        value: "587"
+      - key: EMAIL_HOST_USER
+        fromService:
+          type: web
+          name: kerp-api
+          envVarKey: EMAIL_HOST_USER
+      - key: EMAIL_HOST_PASSWORD
+        fromService:
+          type: web
+          name: kerp-api
+          envVarKey: EMAIL_HOST_PASSWORD
+      - key: EMAIL_USE_TLS
+        value: "1"
+
+  - type: web
+    name: kerp-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    headers:
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_BACKEND_ORIGIN
+        sync: false

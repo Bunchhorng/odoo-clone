@@ -146,6 +146,14 @@ development server, and local settings default to `DEBUG=1`. Before production,
 add production settings, a WSGI/ASGI server and reverse proxy, HTTPS, secret
 management, and backup/storage operations as described in SETUP.md.
 
+## Deploy on Render, Cloudflare, and Neon
+
+The repository includes a production `render.yaml`, PostgreSQL/Neon settings,
+credentialed CORS for the Vue static site, and a password-reset mail worker.
+Follow the [Render + Cloudflare + Neon deployment guide](docs/DEPLOYMENT_RENDER_CLOUDFLARE_NEON.md)
+to configure the required secrets, domains, DNS, and release checks. Local Docker
+development remains on MySQL; a MySQL database is not migrated to Neon automatically.
+
 ## Documentation
 
 - [Project completion report](docs/PROJECT-STATUS-REPORT.md): delivered workflows, all 49 unfinished capability rows, production gaps, and completion priorities.
@@ -161,6 +169,7 @@ management, and backup/storage operations as described in SETUP.md.
 - [Repository audit](docs/REPOSITORY-AUDIT.md): reproduced defects, risks, and remediation priorities.
 - [Odoo parity matrix](docs/ODOO-PARITY-MATRIX.md): 74 evidence-based capability rows; [CSV](docs/ODOO-PARITY-MATRIX.csv) for spreadsheets.
 - [Docker + ERP Core + Authentication](docs/FOUNDATION.md): resolved audit findings, account recovery, throttling, Docker/CI verification.
+- [Production deployment](docs/DEPLOYMENT_RENDER_CLOUDFLARE_NEON.md): Render Blueprint, Neon, Cloudflare DNS, and operational checks.
 
 The [Accounting & integration guide](docs/ACCOUNTING-INTEGRATION.md) covers the new
 ledger, posting-date locks, financial reports and source-document links. Open the

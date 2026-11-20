@@ -77,7 +77,6 @@ services:
     build: ./frontend
     environment:
       API_PROXY_TARGET: http://backend:8000
-      VITE_BACKEND_ORIGIN: http://localhost:${BACKEND_PORT:-8000}
       CHOKIDAR_USEPOLLING: "true"
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-5175}:5175"

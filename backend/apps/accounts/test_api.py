@@ -1,5 +1,5 @@
 from django.contrib.auth import get_user_model
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 
 from apps.companies.models import Company, CompanyMembership
 
@@ -18,6 +18,23 @@ class AuthenticationAPITests(TestCase):
         self.assertEqual(response.json(), {"user": None, "companies": [], "active_company_id": None})
         self.assertIn("csrftoken", response.cookies)
         self.assertEqual(response["Cache-Control"], "private, no-store")
+
+    @override_settings(
+        CORS_ALLOWED_ORIGINS=["https://app.example.com"],
+        CORS_ALLOW_CREDENTIALS=True,
+        CORS_URLS_REGEX=r"^/api/.*$",
+    )
+    def test_trusted_spa_origin_can_make_credentialed_api_requests(self):
+        origin = "https://app.example.com"
+        response = self.client.get("/api/v1/auth/session/", HTTP_ORIGIN=origin)
+        self.assertEqual(response["Access-Control-Allow-Origin"], origin)
+        self.assertEqual(response["Access-Control-Allow-Credentials"], "true")
+
+        preflight = self.client.options("/api/v1/auth/login/", HTTP_ORIGIN=origin,
+                                        HTTP_ACCESS_CONTROL_REQUEST_METHOD="POST")
+        self.assertEqual(preflight.status_code, 200)
+        self.assertEqual(preflight["Access-Control-Allow-Origin"], origin)
+        self.assertEqual(preflight["Access-Control-Allow-Credentials"], "true")
 
     def test_login_session_and_logout(self):
         response = self.client.post("/api/v1/auth/login/", {

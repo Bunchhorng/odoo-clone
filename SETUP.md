@@ -209,3 +209,5 @@ A production deployment needs separate settings, DEBUG=0, HTTPS, secure session
 and CSRF cookies, a production application server/reverse proxy, frontend asset
 hosting, secrets management, trusted-ingress and throttle tuning, tested SMTP delivery, and
 backups. `npm run build` verifies compilation; it does not deploy the application.
+For the prepared Render, Cloudflare, and Neon topology, use the
+[production deployment guide](docs/DEPLOYMENT_RENDER_CLOUDFLARE_NEON.md).

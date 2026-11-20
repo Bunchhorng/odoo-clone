@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api } from './api'
 
-afterEach(() => { vi.unstubAllGlobals(); document.cookie = 'csrftoken=; max-age=0' })
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.resetModules(); document.cookie = 'csrftoken=; max-age=0' })
 describe('Django API integration', () => {
   it('uses the same-origin session and CSRF cookie for writes', async () => {
     document.cookie = 'csrftoken=security-token'
@@ -28,5 +28,17 @@ describe('Django API integration', () => {
   it('does not treat a successful HTML error page as business data', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>Unexpected proxy response</html>', { status: 200 })))
     await expect(api('auth/session/')).rejects.toThrow('unreadable response')
+  })
+  it('uses the configured API origin and sends cross-origin credentials in production', async () => {
+    vi.stubEnv('VITE_BACKEND_ORIGIN', 'https://api.example.com/')
+    vi.resetModules()
+    const { api: deployedApi } = await import('./api')
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({ user: null }), { status: 200 }))
+    vi.stubGlobal('fetch', request)
+
+    await deployedApi('auth/session/')
+
+    expect(request).toHaveBeenCalledWith('https://api.example.com/api/v1/auth/session/',
+      expect.objectContaining({ credentials: 'include' }))
   })
 })
