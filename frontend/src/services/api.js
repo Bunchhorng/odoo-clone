@@ -1,8 +1,11 @@
-const configuredBackendOrigin = import.meta.env.VITE_BACKEND_ORIGIN?.replace(/\/+$/, '') || ''
+const configuredBackendOrigin =
+  import.meta.env.VITE_BACKEND_ORIGIN?.replace(/\/+$/, '') || ''
 
-// Local Vite routes /api to Django. Production uses a separate API origin.
-export const backendOrigin = configuredBackendOrigin || 'http://localhost:8000'
+export const backendOrigin =
+  configuredBackendOrigin || 'http://localhost:8000'
+
 const apiOrigin = configuredBackendOrigin
+
 const credentials = apiOrigin ? 'include' : 'same-origin'
 
 function apiUrl(path) {
