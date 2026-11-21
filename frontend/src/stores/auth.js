@@ -12,6 +12,8 @@ export const useAuthStore = defineStore('auth', () => {
   const activeCompany = computed(() => companies.value.find(item => item.id === activeCompanyId.value))
   const canManage = computed(() => ['owner', 'admin'].includes(activeCompany.value?.role))
   let initialization
+  let initialized = false
+  let signInRequest
   const leaveGuards = new Set()
   function registerLeaveGuard(guard) {
     leaveGuards.add(guard)
@@ -32,13 +34,24 @@ export const useAuthStore = defineStore('auth', () => {
     finally { loading.value = false }
   }
   function initialize() {
-    initialization ??= refresh().catch(err => { error.value = err.message })
+    if (initialized) return Promise.resolve()
+    initialization ??= refresh()
+      .then(() => { initialized = true })
+      .catch(err => { error.value = err.message })
+      .finally(() => { initialization = undefined })
     return initialization
   }
   async function signIn(email, password) {
+    // A double click or an Enter key repeat must join the in-flight sign-in,
+    // never create a second credential-bearing POST.
+    if (signInRequest) return signInRequest
+    signInRequest = (async () => {
     // The public session endpoint sets the CSRF cookie, including after network recovery.
-    await refresh()
-    apply(await api('auth/login/', { method: 'POST', data: { email, password } }))
+      await refresh()
+      apply(await api('auth/login/', { method: 'POST', data: { email, password } }))
+    })()
+    try { return await signInRequest }
+    finally { signInRequest = undefined }
   }
   async function signUp(email, password, passwordConfirmation) {
     await refresh()

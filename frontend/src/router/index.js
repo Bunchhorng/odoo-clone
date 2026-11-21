@@ -6,6 +6,7 @@ import RegisterView from '../views/RegisterView.vue'
 import CompaniesView from '../views/CompaniesView.vue'
 import TeamView from '../views/TeamView.vue'
 import { useAuthStore } from '../stores/auth'
+import { useHealthStore } from '../stores/health'
 import CatalogView from '../views/CatalogView.vue'
 import DashboardView from '../views/DashboardView.vue'
 import OrdersView from '../views/OrdersView.vue'
@@ -55,6 +56,10 @@ const router = createRouter({
 })
 
 router.beforeEach(async to => {
+  const health = useHealthStore()
+  // Do not send a session request while the Render instance is waking. The
+  // health store retries only GET /health/ and leaves all auth writes untouched.
+  if (!await health.check()) return true
   const auth = useAuthStore()
   await auth.initialize()
   if (to.meta.requiresAuth && !auth.user) return { name: 'login', query: { next: to.fullPath } }

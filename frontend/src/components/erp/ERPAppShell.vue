@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/auth'
-import { useHealthStore } from '../../stores/health'
 import { activeApplication, appCatalogue, applications, authorizedApplications, moduleNavigation, pageLabel, type AppCatalogueEntry } from '../../data/apps'
 import { useTheme, type ThemePreference } from '../../composables/theme'
 import AppIcon from '../AppIcon.vue'
@@ -13,7 +12,6 @@ import ERPNotificationCenter from './ERPNotificationCenter.vue'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
-const health = useHealthStore()
 const { preference, setTheme } = useTheme()
 const currentApp = computed(() => activeApplication(route.path))
 const apps = computed(() => authorizedApplications(applications, auth.activeCompany?.role))
@@ -32,14 +30,6 @@ const filteredCatalogue = computed(() => {
 })
 const initials = computed(() => (auth.user?.name || auth.user?.email || 'K').slice(0, 1).toUpperCase())
 const currentYear = new Date().getFullYear()
-let interval: ReturnType<typeof setInterval>
-function checkWhenVisible() { if (document.visibilityState === 'visible') health.check() }
-onMounted(() => {
-  health.check()
-  interval = setInterval(checkWhenVisible, 30000)
-  document.addEventListener('visibilitychange', checkWhenVisible)
-})
-onUnmounted(() => { clearInterval(interval); document.removeEventListener('visibilitychange', checkWhenVisible) })
 watch(() => route.fullPath, () => {
   error.value = ''
   document.title = `${label.value} · Odoo`

@@ -14,7 +14,9 @@ import { useAuthStore } from './stores/auth'
 const pinia = createPinia()
 initializeTheme()
 const app = createApp(App).use(pinia).use(router)
-router.isReady().then(() => app.mount('#app'))
+// Mount immediately so the backend-starting screen remains visible while the
+// initial navigation waits for the health-only cold-start recovery cycle.
+app.mount('#app')
 window.addEventListener('session-expired', () => {
   useAuthStore(pinia).clear()
   router.replace({ name: 'login', query: { expired: '1', next: router.currentRoute.value.fullPath } })

@@ -2,6 +2,20 @@
 :root { font-family: var(--font-sans); font-size: 16px; color: var(--text); background: var(--background); font-synthesis: none; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
 * { box-sizing: border-box; }
 body { margin: 0; font-size: var(--font-base); line-height: 1.5; }
+.backend-starting-screen { display: grid; min-height: 100dvh; padding: 24px; place-items: center; background: radial-gradient(circle at top, #f5eefa 0, var(--background) 44rem); }
+.backend-starting-card { width: min(100%, 510px); padding: 48px 42px; border: 1px solid #714b8330; border-radius: 16px; background: var(--surface); box-shadow: 0 22px 56px #2c123d1c; text-align: center; }
+.backend-starting-brand { display: grid; width: 52px; height: 52px; margin: 0 auto 28px; padding-bottom: 6px; place-items: center; border-radius: 12px; background: var(--primary); color: var(--on-primary); font-size: 48px; line-height: 1; }
+.backend-starting-spinner, .backend-starting-alert { display: grid; width: 36px; height: 36px; margin: 0 auto 20px; place-items: center; border-radius: 50%; }
+.backend-starting-spinner { border: 3px solid var(--selected); border-top-color: var(--primary); animation: backend-spin 850ms linear infinite; }
+.backend-starting-alert { border: 2px solid var(--danger); color: var(--danger); font-size: 21px; font-weight: 700; }
+.backend-starting-kicker { margin: 0 0 8px; color: var(--primary); font-size: var(--font-xs); font-weight: 750; letter-spacing: .14em; }
+.backend-starting-card h1 { margin: 0; color: var(--text); font-size: clamp(24px, 5vw, 31px); font-weight: 600; }
+.backend-starting-copy { margin: 16px auto 0; color: var(--text-muted); line-height: 1.7; }
+.backend-retry-button { min-width: 112px; min-height: 40px; margin-top: 26px; padding: 8px 18px; border: 1px solid var(--primary); border-radius: var(--radius-sm); background: var(--primary); color: var(--on-primary); font-weight: 650; }
+.backend-retry-button:hover { border-color: var(--primary-hover); background: var(--primary-hover); }
+@keyframes backend-spin { to { transform: rotate(360deg); } }
+@media (max-width: 480px) { .backend-starting-screen { padding: 16px; } .backend-starting-card { padding: 38px 24px; } }
+@media (prefers-reduced-motion: reduce) { .backend-starting-spinner { animation-duration: 3s; } }
 a { color: inherit; text-decoration: none; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button, a { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
